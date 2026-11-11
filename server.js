@@ -30,7 +30,7 @@ async function aiResearch(question,symbols){
  const model=process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
  const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
   method:'POST',headers:{Authorization:'Bearer '+process.env.GROQ_API_KEY,'Content-Type':'application/json'},
-  body:JSON.stringify({model,temperature:0.2,max_tokens:1100,messages:[{role:'system',content:prompt},{role:'user',content:JSON.stringify({question,context})}]}),
+  body:JSON.stringify({model,temperature:0.2,max_completion_tokens:4096,messages:[{role:'system',content:prompt},{role:'user',content:JSON.stringify({question,context})}]}),
   signal:AbortSignal.timeout(25000)
  });
  if(!r.ok){
