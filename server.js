@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root=path.dirname(fileURLToPath(import.meta.url));
-const PORT=Number(process.env.PORT||3000), HOST=process.env.HOST||'127.0.0.1';
+const PORT=Number(process.env.PORT||3000), HOST=process.env.HOST||'0.0.0.0';
 const DATA=path.join(root,'data','store.json');
 const defaults={budget:25,watchlist:['SGOV','JEPI','DIVO','O'],holdings:[],predictions:[],researchHistory:[]};
 const validSymbol=s=>typeof s==='string'&&/^[A-Z][A-Z0-9.\-]{0,11}$/.test(s);
