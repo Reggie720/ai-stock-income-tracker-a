@@ -27,19 +27,34 @@ async function aiResearch(question,symbols){
  for(const s of symbols.slice(0,5)){try{quotes.push(await quote(s));}catch(e){errors.push(`${s}: ${e.message}`);}}
  const context={quotes,quoteErrors:errors,disclaimer:'Quotes may be delayed. No dividend history, fundamentals, or news feeds are provided by this service. Do not invent any.'};
  const prompt='You are an educational stock research assistant. Use ONLY the provided verified quote data for current numeric claims. If data is missing, say unavailable. Never fabricate dividend amounts, yields, news, sources, forecasts, probability, confidence percentages, or trading signals. No personalized financial advice. Clearly distinguish general knowledge from sourced live data. Explain downside risk and that a $25 budget may need fractional shares. Do not claim you can execute trades. Give practical concise analysis.';
- const model=process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
+ const model=process.env.GROQ_MODEL?.trim()||'llama-3.3-70b-versatile';
+ const isGptOss=/^openai\/gpt-oss-(20b|120b)$/.test(model);
+ const messages=[{role:'system',content:prompt},{role:'user',content:JSON.stringify({question,context})}];
+ // Reasoning tokens share the completion budget with the final answer. Keep
+ // GPT-OSS reasoning short; never use message.reasoning as a substitute answer.
+ const signal=AbortSignal.timeout(55000);
+ let answer='';
+ for(let attempt=0;attempt<2;attempt++){
  const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
   method:'POST',headers:{Authorization:'Bearer '+process.env.GROQ_API_KEY,'Content-Type':'application/json'},
-  body:JSON.stringify({model,temperature:0.2,max_completion_tokens:4096,messages:[{role:'system',content:prompt},{role:'user',content:JSON.stringify({question,context})}]}),
-  signal:AbortSignal.timeout(25000)
+  body:JSON.stringify({model,temperature:0.2,stream:false,max_completion_tokens:attempt?8192:4096,messages,...(isGptOss?{reasoning_effort:'low',include_reasoning:false}:{})}),
+  signal
  });
  if(!r.ok){
   let detail='';try{const errorBody=await r.json();detail=String(errorBody?.error?.message||errorBody?.message||'').slice(0,350);}catch{}
   // Never echo provider headers, tokens, or raw request data.
   throw Error(`Groq HTTP ${r.status}${detail?': '+detail:''} (model: ${model})`);
  }
- const j=await r.json();const answer=j.choices?.[0]?.message?.content;
- if(!answer)throw Error('AI returned no answer');
+ const j=await r.json(),choice=j.choices?.[0],content=choice?.message?.content;
+ answer=(typeof content==='string'?content:Array.isArray(content)?content.filter(p=>p?.type==='text'&&typeof p.text==='string').map(p=>p.text).join('\n'):'').trim();
+ if(answer&&choice?.finish_reason!=='length')break;
+ if(attempt===1){
+  const reason=typeof choice?.finish_reason==='string'?choice.finish_reason.slice(0,80):'missing';
+  throw Error(`Groq returned ${answer?'an incomplete answer':'no final answer'} (model: ${model}, finish_reason: ${reason}). Please retry or check GROQ_MODEL in Render.`);
+ }
+ // Retry only empty/truncated completions, not refusals, tool calls, or HTTP errors.
+ if(!['stop','length',undefined,null].includes(choice?.finish_reason))throw Error(`Groq did not return a final text answer (model: ${model}). Please retry.`);
+ }
  return {answer,quotes,quoteErrors:errors,source:quotes.length?'Finnhub quote API':'No live market data available',generatedAt:new Date().toISOString(),warning:'AI-generated educational analysis; verify independently. No guaranteed returns.'};
 }
 const limits=new Map();function rate(req){const ip=req.socket.remoteAddress||'local',now=Date.now(),arr=(limits.get(ip)||[]).filter(x=>now-x<60000);if(arr.length>=25)return false;arr.push(now);limits.set(ip,arr);return true;}
@@ -47,7 +62,7 @@ const server=http.createServer(async(req,res)=>{try{
  const url=new URL(req.url,'http://localhost');
  if(url.pathname.startsWith('/api/')){
   if(!rate(req))return send(res,429,{error:'Too many requests; retry in a minute'});
-  if(url.pathname==='/api/status')return send(res,200,{ok:true,ai:!!process.env.GROQ_API_KEY,quotes:!!process.env.FINNHUB_API_KEY,mode:'local single-user; not publicly authenticated'});
+  if(url.pathname==='/api/status')return send(res,200,{ok:true,ai:!!process.env.GROQ_API_KEY,quotes:!!process.env.FINNHUB_API_KEY,aiModel:process.env.GROQ_MODEL?.trim()||'llama-3.3-70b-versatile',revision:process.env.RENDER_GIT_COMMIT||null,mode:'local single-user; not publicly authenticated'});
   if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await load());
   if(url.pathname==='/api/state'&&req.method==='POST'){
    const b=await body(req),d=await load();
