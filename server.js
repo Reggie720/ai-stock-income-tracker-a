@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dividendProfile, dividendReportLines } from './dividends.js';
 
@@ -107,12 +108,51 @@ async function aiResearch(question,symbols,budget=25){
  answer=verifiedResearchReport(answer,quotes,symbols,budget,dividends);
  return {answer,quotes,quoteErrors:errors,dividends,dividendErrors,source:[quotes.length?'Finnhub quote API':null,dividends.length?'SmarterDividends':null].filter(Boolean).join(' + ')||'No market data available',generatedAt:new Date().toISOString(),warning:'Provider-sourced report with AI-selected educational notes. Rate-based income illustrations are not guaranteed payouts. Check dated source records and issuer announcements.'};
 }
+
+// Password and session secrets must be configured as Render environment variables.
+// Do not put either secret in GitHub or browser JavaScript.
+const SESSION_MS=30*86400000;
+const password=()=>process.env.TRACKER_PASSWORD||'';
+const secret=()=>process.env.TRACKER_SESSION_SECRET||'';
+const ready=()=>password().length>=12&&secret().length>=32;
+function cookie(req){return String(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('tracker_session='))?.slice(16)||'';}
+function sign(value){return crypto.createHmac('sha256',secret()).update(value).digest('base64url');}
+function session(req){
+ if(!ready())return null;
+ const parts=cookie(req).split('.');if(parts.length!==2)return null;
+ const [payload,mac]=parts,correct=sign(payload);
+ if(mac.length!==correct.length||!crypto.timingSafeEqual(Buffer.from(mac),Buffer.from(correct)))return null;
+ let data;try{data=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));}catch{return null;}
+ if(!Number.isSafeInteger(data.exp)||!Number.isSafeInteger(data.issued)||data.exp<=Date.now()||data.exp>data.issued+SESSION_MS||data.issued>Date.now()+60000)return null;
+ return {expiresAt:new Date(data.exp).toISOString(),remind:data.exp-Date.now()<=86400000};
+}
+function setCookie(res,token){res.setHeader('Set-Cookie','tracker_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age='+Math.floor(SESSION_MS/1000));}
+function clearCookie(res){res.setHeader('Set-Cookie','tracker_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');}
+function loginPage(configured=true){return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stock Tracker Sign In</title><style>body{background:#0b1325;color:#e9f1ff;font:16px system-ui;margin:0;padding:12vh 18px}main{max-width:430px;margin:auto;background:#14233d;padding:25px;border-radius:15px}input,button{box-sizing:border-box;width:100%;padding:13px;margin:8px 0;border-radius:8px;font:inherit}input{background:#09162b;color:white;border:1px solid #60749a}button{background:#366ce5;color:white;border:0;font-weight:bold}p{color:#b9c9e0}</style><main><h2>📈 AI Stock Income Tracker</h2>${configured?'<p>Enter your password. Your login lasts 30 days.</p><form id="f"><label>Password<input id="p" type="password" autocomplete="current-password" required></label><button>Sign in</button></form><p id="m" role="alert"></p>':'<p>Security setup is pending. Add TRACKER_PASSWORD (12+ characters) and TRACKER_SESSION_SECRET (32+ random characters) to Render environment variables. Your saved data is protected until setup is complete.</p>'}</main><script>const f=document.getElementById('f');if(f)f.onsubmit=async e=>{e.preventDefault();const p=document.getElementById('p'),m=document.getElementById('m');try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p.value})});p.value='';const j=await r.json();if(!r.ok)throw Error(j.error||'Sign-in failed');location.replace('/')}catch(e){m.textContent=e.message}}</script></html>`;}
+const reminderScript=`<script>(async()=>{try{const r=await fetch('/api/session',{cache:'no-store'});if(r.status===401){location.replace('/');return}if(!r.ok)return;const s=await r.json();const box=document.createElement('div');box.style.cssText='background:#27324d;color:white;padding:12px 18px;line-height:1.5';const logout=document.createElement('button');logout.textContent='Sign out';logout.style.marginLeft='12px';logout.onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.replace('/')};if(s.remind){box.textContent='🔔 Your login expires within 24 hours. Re-enter your password to renew for 30 days.';const renew=document.createElement('button');renew.textContent='Renew login';renew.style.marginLeft='12px';renew.onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.replace('/')};box.append(renew)}else{box.textContent='🔒 Secure login active through '+new Date(s.expiresAt).toLocaleDateString()}box.append(logout);document.querySelector('header')?.after(box)}catch{}})();</script>`;
 const limits=new Map();function rate(req){const ip=req.socket.remoteAddress||'local',now=Date.now(),arr=(limits.get(ip)||[]).filter(x=>now-x<60000);if(arr.length>=25)return false;arr.push(now);limits.set(ip,arr);return true;}
+const loginLimits=new Map();function loginRate(req){const ip=req.socket.remoteAddress||'local',now=Date.now(),arr=(loginLimits.get(ip)||[]).filter(x=>now-x<900000);if(arr.length>=8)return false;arr.push(now);loginLimits.set(ip,arr);return true;}
 const server=http.createServer(async(req,res)=>{try{
  const url=new URL(req.url,'http://localhost');
+ if(url.pathname==='/api/login'&&req.method==='POST'){
+  if(!loginRate(req))return send(res,429,{error:'Too many login attempts. Try again in 15 minutes.'});
+  if(!ready())return send(res,503,{error:'Security setup is incomplete'});
+  const b=await body(req,2048),given=Buffer.from(String(b.password||'')),expected=Buffer.from(password());
+  if(given.length!==expected.length||!crypto.timingSafeEqual(given,expected))return send(res,401,{error:'Incorrect password'});
+  const issued=Date.now(),exp=issued+SESSION_MS,payload=Buffer.from(JSON.stringify({issued,exp})).toString('base64url');
+  setCookie(res,payload+'.'+sign(payload));return send(res,200,{ok:true,expiresAt:new Date(exp).toISOString()});
+ }
+ if(url.pathname==='/api/logout'&&req.method==='POST'){clearCookie(res);return send(res,200,{ok:true});}
+ const active=session(req);
+ if(!active){
+  if(url.pathname.startsWith('/api/'))return send(res,401,{error:'Sign in required'});
+  if(req.method!=='GET')return send(res,405,{error:'Method not allowed'});
+  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(loginPage(ready()));
+ }
+ if(url.pathname==='/api/session'&&req.method==='GET')return send(res,200,{ok:true,...active});
  if(url.pathname.startsWith('/api/')){
   if(!rate(req))return send(res,429,{error:'Too many requests; retry in a minute'});
-  if(url.pathname==='/api/status')return send(res,200,{ok:true,ai:!!process.env.GROQ_API_KEY,quotes:!!process.env.FINNHUB_API_KEY,aiModel:process.env.GROQ_MODEL?.trim()||'llama-3.3-70b-versatile',revision:process.env.RENDER_GIT_COMMIT||null,mode:'local single-user; not publicly authenticated'});
+  if(url.pathname==='/api/status')return send(res,200,{ok:true,ai:!!process.env.GROQ_API_KEY,quotes:!!process.env.FINNHUB_API_KEY,aiModel:process.env.GROQ_MODEL?.trim()||'llama-3.3-70b-versatile',revision:process.env.RENDER_GIT_COMMIT||null,mode:'password-protected single-user tracker'});
   if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await load());
   if(url.pathname==='/api/state'&&req.method==='POST'){
    const patch=statePatch(await body(req,1048576));
@@ -139,6 +179,8 @@ const server=http.createServer(async(req,res)=>{try{
  let f=url.pathname==='/'?'index.html':url.pathname.slice(1);
  if(f.includes('..')||f.includes('\\'))return send(res,403,{error:'Forbidden'});
  const target=path.join(root,'public',f),content=await fs.readFile(target);
- res.writeHead(200,{'Content-Type':f.endsWith('.html')?'text/html; charset=utf-8':f.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(content);
+ const html=f.endsWith('.html');
+ res.writeHead(200,{'Content-Type':html?'text/html; charset=utf-8':f.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+ res.end(html?content.toString('utf8').replace('</body>',reminderScript+'</body>'):content);
  }catch(e){send(res,e.status||(e.code==='ENOENT'?404:503),{error:e.message||'Service unavailable'});}});
 server.listen(PORT,HOST,()=>console.log(`AI Stock Income running at http://${HOST}:${PORT}`));
