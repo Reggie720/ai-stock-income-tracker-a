@@ -24,7 +24,11 @@ Prices come from Finnhub. Dividend profiles come from the documented free Smarte
 
 Income is a labeled illustration: `(saved budget / quoted price) * provider annualized dividend per share / 12`, before fees and taxes. It is not an actual payment forecast; distribution amounts can vary. AI selects educational topic IDs only and cannot author financial figures. Quotes may be delayed. No guaranteed returns.
 
-Run regression tests with `node --test server.test.js dividends.test.js`.
+Run regression tests with `npm test`. Tests cover dividend calculations, empty AI responses, portfolio and journal saves, concurrent writes, backup restoration including research history, and persistence across a process restart. Lifecycle tests use an isolated temporary directory and fictional records.
+
+Backups can restore all saved categories, including research history (maximum 1 MB). Invalid imports are rejected without changing existing records. Writes are queued to prevent overlapping requests or in-flight AI research from overwriting unrelated changes.
+
+Public-access review: this version still has shared, unauthenticated server storage. Anyone who can access `/api/state` can read the stored records, and state writes are not protected by sign-in. Do not treat portfolio entries or journal notes as private. Authentication and durable production storage remain separate unfinished requirements; a process-restart test does not prove survival across a Render redeploy.
 
 ## Original LastApp project
 The original LastApp ZIP is not overwritten. This new project is standalone. Moving the changes back into LastApp would require its supported import/deployment workflow.

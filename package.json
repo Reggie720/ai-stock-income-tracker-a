@@ -1,1 +1,14 @@
-{"name":"ai-stock-income-fullstack","version":"2.0.0","private":true,"type":"module","scripts":{"start":"node server.js","dev":"node server.js"},"engines":{"node":">=20"}}
+{
+  "name": "ai-stock-income-fullstack",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

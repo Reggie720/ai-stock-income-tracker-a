@@ -16,7 +16,7 @@ function harness(responses,{model='openai/gpt-oss-20b',quoteFailure=false,divide
   fs:{readFile:async()=>{throw Error('No saved state');},mkdir:async()=>{},writeFile:async(_,data)=>{saved=JSON.parse(data);},rename:async()=>{}},
   dividendReportLines,dividendProfile:async symbol=>{if(!dividendData)throw Error('No dividend record');return normalizeDividend({...dividendData,symbol},symbol);},
   path,fileURLToPath,process:{env:{GROQ_API_KEY:'test-only',GROQ_MODEL:model,FINNHUB_API_KEY:'test-only',RENDER_GIT_COMMIT:'test-revision'}},
-  AbortSignal,URL,structuredClone,console,
+  AbortSignal,URL,structuredClone,console,Buffer,
   fetch:async(url,options)=>{
    if(url.startsWith('https://finnhub.io/')){
     if(quoteFailure)throw Error('Quote unavailable');

@@ -13,7 +13,19 @@ const validSymbol = s => typeof s === 'string' && /^[A-Z][A-Z0-9.\-]{0,11}$/.tes
 const send = (res,status,obj) => {res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(obj));};
 async function load(){try{return {...defaults,...JSON.parse(await fs.readFile(DATA,'utf8'))};}catch{return structuredClone(defaults);}}
 async function save(x){await fs.mkdir(path.dirname(DATA),{recursive:true});await fs.writeFile(DATA+'.tmp',JSON.stringify(x,null,2));await fs.rename(DATA+'.tmp',DATA);}
-async function body(req){let text='';for await(const c of req){text+=c;if(text.length>12000)throw Error('Request too large');}return JSON.parse(text||'{}');}
+let stateWrites=Promise.resolve();
+function updateState(change){const pending=stateWrites.then(async()=>{const state=await load();change(state);await save(state);return state;});stateWrites=pending.catch(()=>{});return pending;}
+const invalid=message=>Object.assign(Error(message),{status:400});
+async function body(req,maxBytes=12000){let text='';for await(const c of req){text+=c;if(Buffer.byteLength(text)>maxBytes)throw Object.assign(Error('Request too large'),{status:413});}try{const value=JSON.parse(text||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw Error();return value;}catch{throw invalid('Request must contain a JSON object');}}
+function statePatch(b){
+ const patch={},own=key=>Object.hasOwn(b,key);
+ if(own('budget')){if(!Number.isFinite(b.budget)||b.budget<0||b.budget>100000000)throw invalid('Invalid budget');patch.budget=b.budget;}
+ if(own('watchlist')){if(!Array.isArray(b.watchlist)||b.watchlist.length>40||!b.watchlist.every(validSymbol))throw invalid('Invalid watchlist');patch.watchlist=[...new Set(b.watchlist)];}
+ if(own('holdings')){if(!Array.isArray(b.holdings)||b.holdings.length>100||!b.holdings.every(x=>x&&validSymbol(x.symbol)&&Number.isFinite(x.shares)&&x.shares>=0&&Number.isFinite(x.cost)&&x.cost>=0))throw invalid('Invalid holdings');patch.holdings=b.holdings.map(x=>({symbol:x.symbol,shares:x.shares,cost:x.cost}));}
+ if(own('predictions')){if(!Array.isArray(b.predictions)||b.predictions.length>100||!b.predictions.every(x=>x&&validSymbol(x.symbol)&&['BUY','WAIT','SELL'].includes(x.signal)&&typeof x.note==='string'&&x.note.length<=500&&typeof x.date==='string'&&x.date.length<=40))throw invalid('Invalid prediction journal');patch.predictions=b.predictions.map(x=>({symbol:x.symbol,signal:x.signal,note:x.note,date:x.date}));}
+ if(own('researchHistory')){if(!Array.isArray(b.researchHistory)||b.researchHistory.length>30||!b.researchHistory.every(x=>x&&typeof x.question==='string'&&x.question.length<=1500&&typeof x.date==='string'&&x.date.length<=40&&typeof x.answer==='string'&&x.answer.length<=20000))throw invalid('Invalid research history');patch.researchHistory=b.researchHistory.map(x=>({question:x.question,date:x.date,answer:x.answer}));}
+ return patch;
+}
 async function quote(symbol){
  if(!process.env.FINNHUB_API_KEY)throw Error('FINNHUB_API_KEY not configured');
  const u='https://finnhub.io/api/v1/quote?symbol='+encodeURIComponent(symbol)+'&token='+encodeURIComponent(process.env.FINNHUB_API_KEY);
@@ -103,12 +115,8 @@ const server=http.createServer(async(req,res)=>{try{
   if(url.pathname==='/api/status')return send(res,200,{ok:true,ai:!!process.env.GROQ_API_KEY,quotes:!!process.env.FINNHUB_API_KEY,aiModel:process.env.GROQ_MODEL?.trim()||'llama-3.3-70b-versatile',revision:process.env.RENDER_GIT_COMMIT||null,mode:'local single-user; not publicly authenticated'});
   if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await load());
   if(url.pathname==='/api/state'&&req.method==='POST'){
-   const b=await body(req),d=await load();
-   if(typeof b.budget==='number'&&b.budget>=0&&b.budget<=100000000)d.budget=b.budget;
-   if(Array.isArray(b.watchlist)&&b.watchlist.length<=40&&b.watchlist.every(validSymbol))d.watchlist=[...new Set(b.watchlist)];
-   if(Array.isArray(b.holdings)&&b.holdings.length<=100&&b.holdings.every(x=>validSymbol(x.symbol)&&Number.isFinite(x.shares)&&x.shares>=0&&Number.isFinite(x.cost)&&x.cost>=0))d.holdings=b.holdings.map(x=>({symbol:x.symbol,shares:x.shares,cost:x.cost}));
-   if(Array.isArray(b.predictions)&&b.predictions.length<=100)d.predictions=b.predictions.filter(x=>validSymbol(x.symbol)&&['BUY','WAIT','SELL'].includes(x.signal)).map(x=>({symbol:x.symbol,signal:x.signal,note:String(x.note||'').slice(0,500),date:String(x.date||'').slice(0,40)}));
-   await save(d);return send(res,200,d);
+   const patch=statePatch(await body(req,1048576));
+   return send(res,200,await updateState(d=>Object.assign(d,patch)));
   }
   if(url.pathname==='/api/quote'&&req.method==='GET'){const s=(url.searchParams.get('symbol')||'').toUpperCase();if(!validSymbol(s))return send(res,400,{error:'Invalid ticker'});return send(res,200,await quote(s));}
   if(url.pathname==='/api/dividends'&&req.method==='GET'){
@@ -122,8 +130,8 @@ const server=http.createServer(async(req,res)=>{try{
    if(question.length<5||question.length>1500)return send(res,400,{error:'Question must be 5–1500 characters'});
    const symbols=(Array.isArray(b.symbols)?b.symbols:[]).map(s=>String(s).toUpperCase()).filter(validSymbol).slice(0,5);
    const d=await load(),result=await aiResearch(question,symbols,d.budget);
-   d.researchHistory=[{question,date:result.generatedAt,answer:result.answer},...d.researchHistory].slice(0,30);
-   await save(d);return send(res,200,result);
+   await updateState(current=>{current.researchHistory=[{question,date:result.generatedAt,answer:result.answer},...current.researchHistory].slice(0,30);});
+   return send(res,200,result);
   }
   return send(res,404,{error:'Unknown endpoint'});
  }
@@ -132,5 +140,5 @@ const server=http.createServer(async(req,res)=>{try{
  if(f.includes('..')||f.includes('\\'))return send(res,403,{error:'Forbidden'});
  const target=path.join(root,'public',f),content=await fs.readFile(target);
  res.writeHead(200,{'Content-Type':f.endsWith('.html')?'text/html; charset=utf-8':f.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8','X-Content-Type-Options':'nosniff'});res.end(content);
- }catch(e){send(res,e.code==='ENOENT'?404:503,{error:e.message||'Service unavailable'});}});
+ }catch(e){send(res,e.status||(e.code==='ENOENT'?404:503),{error:e.message||'Service unavailable'});}});
 server.listen(PORT,HOST,()=>console.log(`AI Stock Income running at http://${HOST}:${PORT}`));
