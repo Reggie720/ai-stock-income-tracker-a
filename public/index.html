@@ -80,5 +80,99 @@ document.querySelector('#refreshPerformance').onclick=async()=>{
  finally{button.disabled=false;}
 };
  
- init();
+ 
+/* Automatic research history */
+const historyPanel = document.createElement('div');
+historyPanel.className = 'panel';
+historyPanel.innerHTML = `
+<h2>📚 Saved Research History</h2>
+<p>Research reports are saved automatically.
+Open or compare previous reports.</p>
+<div id="savedResearch"></div>
+<div id="compareResults"></div>`;
+$('#research').appendChild(historyPanel);
+
+function getHistory(){
+ return Array.isArray(state.researchHistory)
+  ? state.researchHistory : [];
+}
+
+function openReport(i){
+ const r = getHistory()[i];
+ if(!r)return;
+ $('#question').value = r.question;
+ $('#analysis').innerHTML =
+  '<div class="notice">Saved research · '+
+  esc(r.date)+'</div><pre>'+
+  esc(r.answer)+'</pre>';
+ $('#analysis').scrollIntoView({behavior:'smooth'});
+}
+
+function displayHistory(){
+ const history = getHistory();
+ $('#compareResults').replaceChildren();
+ $('#savedResearch').innerHTML = history.length
+ ? history.map((r,i)=>`
+ <div class="item">
+ <strong>${esc(r.date)}</strong>
+ <p>${esc(r.question)}</p>
+ <button onclick="openReport(${i})">
+ Open report</button>
+ <label style="display:block;margin-top:10px">
+ <input type="checkbox" style="width:auto"
+ data-compare="${i}"> Select to compare
+ </label></div>`).join('')+
+ '<button onclick="compareReports()">Compare selected reports</button>'
+ : '<p>No saved research reports yet.</p>';
+}
+
+function compareReports(){
+ const selected = [...document.querySelectorAll(
+ '[data-compare]:checked')];
+ if(selected.length !== 2){
+  return msg('Select exactly two reports',true);
+ }
+ $('#compareResults').innerHTML =
+ '<h3>Research Comparison</h3>'+
+ selected.map(el=>{
+  const r = getHistory()[Number(el.dataset.compare)];
+  return '<div class="item"><strong>'+
+   esc(r.date)+'</strong><p>'+
+   esc(r.question)+'</p><pre>'+
+   esc(r.answer)+'</pre></div>';
+ }).join('');
+}
+
+const originalAnalyze = $('#analyze').onclick;
+
+$('#analyze').onclick = async function(){
+ this.disabled = true;
+ try{
+  await originalAnalyze();
+  state = await api('/api/state');
+  displayHistory();
+ }catch(e){
+  msg('Could not refresh saved history: '+e.message,true);
+ }finally{
+  this.disabled = false;
+ }
+};
+
+const originalRender = render;
+
+render = function(){
+ originalRender();
+ displayHistory();
+};
+
+async function startApp(){
+ await init();
+ displayHistory();
+ if(getHistory().length){
+  openReport(0);
+ }
+}
+
+startApp();
+ 
 </script></body></html>
