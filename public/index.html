@@ -36,5 +36,49 @@ $('#addPrediction').onclick=async()=>{const symbol=$('#predSymbol').value.trim()
 $('#saveBudget').onclick=async()=>{const n=Number($('#budgetInput').value);if(!Number.isFinite(n)||n<0||n>100000000)return msg('Invalid budget',true);await persist({budget:n})};
 $('#export').onclick=async()=>{try{state=await api('/api/state');const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='stock-income-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}catch(e){msg('Backup could not be exported: '+e.message,true)}};
 $('#import').onchange=async e=>{try{const file=e.target.files?.[0];if(!file)return;if(file.size>1048576)throw Error('Backup is too large (maximum 1 MB)');const x=JSON.parse(await file.text());if(!x||typeof x!=='object'||!Array.isArray(x.watchlist)||!Array.isArray(x.holdings)||!Array.isArray(x.predictions))throw Error('Not a valid backup');if(!confirm('Replace this app’s saved records with this backup?'))return;if(await persist(x))msg('Backup restored, including research history when present')}catch(err){msg(err.message,true)}};
-init();
+
+const performancePanel=document.createElement('div');
+performancePanel.className='panel';
+performancePanel.innerHTML='<h2>📊 Paper Trading Performance</h2><p>Price gains and losses only. Dividends are not counted as received. Quotes may be delayed.</p><button id="refreshPerformance">Refresh Performance</button><div id="performanceResults" class="notice">Tap Refresh Performance to calculate your portfolio value.</div>';
+document.querySelector('#portfolio').prepend(performancePanel);
+
+document.querySelector('#refreshPerformance').onclick=async()=>{
+ const output=document.querySelector('#performanceResults');
+ const button=document.querySelector('#refreshPerformance');
+ const holdings=state.holdings.slice();
+ if(!holdings.length){output.textContent='No paper holdings saved.';return;}
+ button.disabled=true;
+ output.textContent='Checking market prices…';
+ try{
+  const symbols=[...new Set(holdings.map(h=>h.symbol))];
+  const quotes=await Promise.all(symbols.map(async symbol=>{
+   try{
+    const q=await api('/api/quote?symbol='+encodeURIComponent(symbol));
+    if(!Number.isFinite(Number(q.price))||Number(q.price)<=0)throw Error('Invalid price');
+    return {symbol,price:Number(q.price),asOf:q.asOf,source:q.source};
+   }catch(e){return {symbol,error:e.message};}
+  }));
+  const quoteMap=new Map(quotes.map(q=>[q.symbol,q]));
+  let invested=0,value=0,missing=0;
+  const money=n=>'$'+Math.abs(n).toFixed(2);
+  const signed=n=>(n<0?'-':'+')+money(n);
+  const rows=holdings.map(h=>{
+   const q=quoteMap.get(h.symbol);
+   const cost=Number(h.cost),shares=Number(h.shares);
+   if(!q||q.error||!Number.isFinite(cost)||!Number.isFinite(shares)){
+    missing++;
+    return '<div class="item"><strong>'+esc(h.symbol)+'</strong> · Quote unavailable</div>';
+   }
+   const current=shares*q.price,gain=current-cost;
+   invested+=cost;value+=current;
+   const pct=cost>0?(gain/cost*100).toFixed(2)+'%':'N/A';
+   return '<div class="item"><strong>'+esc(h.symbol)+'</strong> · '+shares+' shares<br>Cost: '+money(cost)+' · Value: '+money(current)+'<br>Gain/Loss: '+signed(gain)+' ('+pct+')<br><small>Price: '+money(q.price)+' · '+esc(q.asOf||'Time unavailable')+'</small></div>';
+  });
+  const gain=value-invested;
+  output.innerHTML='<div class="grid"><div class="metric">Invested<strong>'+money(invested)+'</strong></div><div class="metric">Current value<strong>'+money(value)+'</strong></div><div class="metric">Price gain/loss<strong>'+signed(gain)+'</strong></div><div class="metric">Price return<strong>'+(invested>0?(gain/invested*100).toFixed(2)+'%':'N/A')+'</strong></div></div>'+(missing?'<p class="notice error">'+missing+' holding(s) excluded because quotes were unavailable. Totals are partial.</p>':'')+rows.join('')+'<small>Calculated '+esc(new Date().toLocaleString())+'. No actual trades or dividends are recorded by this calculation.</small>';
+ }catch(e){output.textContent='Performance unavailable: '+e.message;}
+ finally{button.disabled=false;}
+};
+ 
+ init();
 </script></body></html>
