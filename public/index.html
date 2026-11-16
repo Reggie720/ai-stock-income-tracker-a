@@ -173,6 +173,75 @@ async function startApp(){
  }
 }
 
+/* Stock report reader: tap-to-speak only, using the browser's speech service. */
+(()=>{
+ const supported='speechSynthesis' in window&&typeof window.SpeechSynthesisUtterance==='function';
+ const controls=new Map();let active=null,run=0;
+ const reportText=el=>(el.textContent||'').replace(/\*\*/g,'').replace(/(^|\n)#{1,6}\s+/g,'$1').replace(/\s+/g,' ').trim();
+ function chunks(text){
+  const result=[];let part='';
+  for(const word of text.match(/\S+\s*/g)||[]){
+   if(part.length+word.length>180&&part){result.push(part.trim());part='';}
+   if(word.length>180){const letters=Array.from(word);while(letters.length>180)result.push(letters.splice(0,180).join(''));part=letters.join('');}
+   else part+=word;
+  }
+  if(part.trim())result.push(part.trim());return result;
+ }
+ function stop(message='Stopped.'){
+  run++;const old=active;active=null;
+  if(old){old.ui.read.disabled=!supported;old.ui.stop.disabled=true;old.ui.status.textContent=message;}
+  if(supported)window.speechSynthesis.cancel();
+ }
+ function read(target,ui){
+  stop();const text=reportText(target);if(!text)return;
+  const token=++run;active={target,ui,text,token,utterance:null};
+  ui.read.disabled=true;ui.stop.disabled=false;ui.status.textContent='Reading…';
+  const parts=chunks(text);let index=0;
+  function next(){
+   if(!active||active.token!==token)return;
+   if(!target.isConnected||target.closest('.view')?.classList.contains('hidden')){stop();return;}
+   if(index>=parts.length){stop('Finished reading.');return;}
+   try{
+    const utterance=new window.SpeechSynthesisUtterance(parts[index++]);
+    utterance.lang='en-US';utterance.rate=1;
+    const voices=window.speechSynthesis.getVoices();
+    const voice=voices.find(v=>v.localService&&/^en[-_]US$/i.test(v.lang))||voices.find(v=>/^en[-_]US$/i.test(v.lang))||voices.find(v=>/^en\b/i.test(v.lang));
+    if(voice)utterance.voice=voice;
+    active.utterance=utterance;
+    utterance.onend=()=>{if(active?.token===token)next();};
+    utterance.onerror=()=>{if(active?.token===token)stop('Could not read aloud. Try again and check your phone’s sound and voice settings.');};
+    window.speechSynthesis.resume();window.speechSynthesis.speak(utterance);
+   }catch{if(active?.token===token)stop('Read aloud is unavailable. Check your browser’s voice settings.');}
+  }
+  next();
+ }
+ function sync(){
+  if(active&&(!active.target.isConnected||active.target.closest('.view')?.classList.contains('hidden')||reportText(active.target)!==active.text))stop();
+  for(const [target,ui] of controls){if(!target.isConnected||!reportText(target)||(target.id.startsWith('quote-')&&!/^\$/.test(reportText(target)))){ui.row.remove();controls.delete(target);}}
+  for(const target of document.querySelectorAll('#analysis pre, #dividendRows pre, #compareResults pre, #watchRows [id^="quote-"]')){
+   const text=reportText(target),isQuote=target.id.startsWith('quote-');
+   if(!text||(isQuote&&!/^\$/.test(text)))continue;
+   if(controls.has(target))continue;
+   const row=document.createElement('div');row.className='row speech-controls';
+   row.setAttribute('role','group');row.setAttribute('aria-label',isQuote?'Quote reading controls':'Report reading controls');
+   const readButton=document.createElement('button');readButton.type='button';readButton.textContent='🔊 Read aloud';readButton.disabled=!supported;
+   const stopButton=document.createElement('button');stopButton.type='button';stopButton.textContent='Stop';stopButton.className='secondary';stopButton.disabled=true;
+   const status=document.createElement('small');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+   if(!supported)status.textContent='Read aloud is not supported in this browser.';
+   const ui={row,read:readButton,stop:stopButton,status};
+   readButton.onclick=()=>read(target,ui);stopButton.onclick=()=>stop();
+   row.append(readButton,stopButton,status);target.before(row);controls.set(target,ui);
+  }
+ }
+ const style=document.createElement('style');
+ style.textContent='.speech-controls button{min-height:44px}.speech-controls button:disabled{opacity:.55;cursor:default}.speech-controls small{flex-basis:100%;margin:0}';
+ document.head.append(style);
+ new MutationObserver(sync).observe(document.querySelector('main'),{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class']});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
+ window.addEventListener('pagehide',()=>stop());
+ sync();
+})();
+
 startApp();
  
 </script></body></html>
