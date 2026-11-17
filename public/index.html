@@ -1,5 +1,13 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10213c"><title>AI Stock Income Tracker</title><style>
 :root{font-family:system-ui,-apple-system,sans-serif;color:#e9f1ff;background:#0b1325}*{box-sizing:border-box}body{margin:0}header{background:#132342;padding:20px 18px;border-bottom:1px solid #304264}header h1{margin:0;font-size:23px}header p{margin:5px 0 0;color:#a9bbd6}main{max-width:980px;margin:auto;padding:18px 16px 100px}.tabs{display:flex;gap:7px;overflow:auto;padding:10px 0 18px}.tabs button{white-space:nowrap}.panel{background:#14233d;border:1px solid #2b4164;border-radius:15px;padding:17px;margin:0 0 15px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px}.metric{background:#1d3150;border-radius:12px;padding:16px}.metric strong{display:block;font-size:26px;margin-top:6px}h2{font-size:19px;margin:0 0 12px}h3{margin:14px 0 7px;font-size:16px}p,small{color:#b9c9e0;line-height:1.5}button{background:#366ce5;color:white;border:0;border-radius:9px;padding:11px 15px;font-weight:650;cursor:pointer}button.secondary{background:#253a59}button.active{background:#14a6a2;color:#07172b}input,textarea,select{background:#09162b;color:#fff;border:1px solid #4a638a;border-radius:9px;padding:12px;font:inherit;width:100%}textarea{min-height:120px;resize:vertical}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:10px 0}.row input{flex:1;min-width:110px}.row button{flex-shrink:0}.notice{padding:12px;border-radius:10px;background:#27324d;color:#e5eefa;margin:12px 0}.error{background:#512b35}.ok{background:#1c493f}pre{white-space:pre-wrap;word-break:break-word;font:inherit;line-height:1.6}.hidden{display:none}.muted{color:#a9bbd6}.pill{display:inline-block;background:#2b3d5b;padding:5px 9px;border-radius:18px;margin:3px}.item{padding:12px 0;border-bottom:1px solid #344665}.item:last-child{border:0}.right{margin-left:auto}footer{color:#92a6c4;text-align:center;font-size:12px;padding:15px}a{color:#a4c6ff}@media(max-width:450px){header h1{font-size:20px}.panel{padding:13px}}
+body.with-market-dock{--dock-height:310px;padding-bottom:calc(var(--dock-height) + 12px)}
+body.dock-expanded{--dock-height:50dvh}body.dock-mini{--dock-height:52px}
+#marketDock{position:fixed;z-index:50;bottom:0;right:0;width:100%;height:var(--dock-height);background:#101f36;border:1px solid #4c6385;box-shadow:0 -6px 24px #0007;border-radius:14px 14px 0 0;display:flex;flex-direction:column;font-size:12px;padding-bottom:env(safe-area-inset-bottom)}
+.dock-head{display:flex;align-items:center;gap:7px;min-height:50px;padding:8px 12px;border-bottom:1px solid #344665;flex-shrink:0}.dock-head strong{font-size:14px}.dock-head button{padding:7px 9px;font-size:11px;min-height:32px}.dock-head #dockCount{margin-left:auto;font-size:11px;color:#fee3a3}.dock-head #dockRefresh{font-size:19px;padding:3px 10px}
+#dockBody{overflow:auto;padding:7px 12px 10px;min-height:0}.dock-mini #dockBody{display:none}#dockStocks{display:flex;gap:6px;overflow:auto;margin-bottom:8px}#dockStocks button{font-size:12px;padding:7px 12px;white-space:nowrap}.dock-price{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dock-price strong{font-size:15px}.dock-signal{margin-left:auto;border-radius:6px;background:#483d23;color:#ffe2a3;padding:4px 7px}.dock-signal.review{background:#164d43;color:#a5f4d6}.up{color:#7ce5bc}.down{color:#ff9b9b}.flat{color:#bed0ea}.dock-chart{display:block;width:100%;height:64px;margin-top:4px;overflow:visible}.dock-expanded .dock-chart{height:clamp(64px,13dvh,130px)}.dock-chart path{fill:none;stroke:currentColor;stroke-width:2;vector-effect:non-scaling-stroke}.dock-chart circle{fill:currentColor}.dock-chart .dock-axis{stroke:#334765;stroke-width:1}.dock-chart-caption{display:flex;justify-content:space-between;gap:5px;color:#94a9c5;font-size:10px}.dock-reason,.dock-where{margin:6px 0;line-height:1.35}.dock-footer{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid #334765;margin-top:8px;padding-top:8px}.dock-footer button{padding:7px 10px;font-size:11px}.dock-footer small{width:100%;font-size:10px}.dock-chart-empty{margin:8px 0;padding:8px;background:#192b46;border-radius:6px}#dockDetail>small{font-size:10px;display:block}
+@media(min-width:800px){#marketDock{width:440px;right:16px;border-radius:14px 14px 0 0}body.with-market-dock{padding-bottom:calc(var(--dock-height) + 12px)}}
+@media(max-width:360px){.dock-head{gap:4px;padding:6px}.dock-head strong{font-size:12px}.dock-head button{padding:6px}.dock-price{gap:5px}}
+
 </style></head><body><header><h1>📈 AI Stock Income Tracker</h1><p>Research first. Protect your money. You approve every trade.</p></header><main><div class="tabs" id="tabs"><button data-tab="overview" class="active">Overview</button><button data-tab="research">AI Research</button><button data-tab="watchlist">Watchlist</button><button data-tab="dividends">Dividends</button><button data-tab="portfolio">Portfolio</button><button data-tab="predictions">Predictions</button><button data-tab="settings">Setup</button></div><div id="message"></div>
 <section id="overview" class="view"><div class="grid"><div class="metric">Starting budget<strong id="budgetMetric">$25.00</strong></div><div class="metric">Tracked holdings<strong id="holdingsMetric">0</strong></div><div class="metric">Watchlist<strong id="watchMetric">4</strong></div></div><div class="panel" style="margin-top:15px"><h2>Getting started</h2><p>Research prices and provider-reported dividend records. Open AI Research for a comparison or Dividends for dated payouts and income illustrations. Check the live connection status below.</p><div class="row"><button onclick="show('research')">Ask AI</button><button class="secondary" onclick="show('watchlist')">View Watchlist</button><button class="secondary" onclick="show('settings')">Check Connections</button></div></div><div class="panel"><h2>Live service status</h2><div id="status">Checking…</div></div></section>
 <section id="research" class="view hidden"><div class="panel"><h2>AI Stock Research</h2><p>Research combines Finnhub quotes with dated SmarterDividends records. Missing figures remain unavailable. Income illustrations use provider rates, not AI predictions.</p><label for="question">Your question</label><textarea id="question">Compare SGOV, JEPI, DIVO, and O for someone starting with $25. Explain risks, monthly income limitations, and what data is missing.</textarea><div class="row"><button id="analyze">Analyze stocks</button></div><div id="analysis"></div></div></section>
@@ -188,10 +196,58 @@ async function startApp(){
  let loading=false;
  const number=(x,d=2)=>typeof x==='number'&&Number.isFinite(x)?x.toFixed(d):'Unavailable';
  const time=x=>{const n=Date.parse(x);return Number.isFinite(n)?new Date(n).toLocaleString():'Unavailable';};
+/* Persistent, read-only market panel. Prices are sampled, never simulated. */
+ const dock=document.createElement('aside');dock.id='marketDock';dock.setAttribute('aria-label','Market and stock signals');
+ dock.innerHTML='<div class="dock-head"><strong>Market & signals</strong><span id="dockCount" aria-live="polite">Loading…</span><button id="dockRefresh" class="secondary" aria-label="Refresh market panel">↻</button><button id="dockExpand" class="secondary" aria-label="Expand market panel" aria-expanded="false">Half screen</button><button id="dockMinimize" class="secondary" aria-label="Minimize market panel" aria-expanded="true">−</button></div><div id="dockBody"><div id="dockStocks" aria-label="Monitored stocks"></div><div id="dockDetail">Loading your watchlist prices…</div><div class="dock-footer"><button id="dockSignals">Full signals</button><a href="https://app.alpaca.markets/dashboard" target="_blank" rel="noopener noreferrer">Alpaca · Paper Trading ↗</a><small>Real money: not connected · sampled quotes may be delayed.</small></div></div>';
+ document.body.appendChild(dock);document.body.classList.add('with-market-dock');
+ let dockFeed=null,selectedSymbol='',dockMode='open';
+ try{const saved=localStorage.getItem('tracker-market-panel');if(['open','expanded','mini'].includes(saved))dockMode=saved;}catch{}
+ function setDockMode(mode){dockMode=mode;document.body.classList.toggle('dock-expanded',mode==='expanded');document.body.classList.toggle('dock-mini',mode==='mini');document.querySelector('#dockExpand').textContent=mode==='expanded'?'Small screen':'Half screen';document.querySelector('#dockExpand').setAttribute('aria-expanded',String(mode==='expanded'));document.querySelector('#dockMinimize').textContent=mode==='mini'?'+':'−';document.querySelector('#dockMinimize').setAttribute('aria-label',mode==='mini'?'Open market panel':'Minimize market panel');document.querySelector('#dockMinimize').setAttribute('aria-expanded',String(mode!=='mini'));try{localStorage.setItem('tracker-market-panel',mode);}catch{}}
+ setDockMode(dockMode);
+ document.querySelector('#dockExpand').onclick=()=>setDockMode(dockMode==='expanded'?'open':'expanded');
+ document.querySelector('#dockMinimize').onclick=()=>setDockMode(dockMode==='mini'?'open':'mini');
+ document.querySelector('#dockRefresh').onclick=()=>loadSignals();
+ document.querySelector('#dockSignals').onclick=()=>{show('signals');};
+ function dockStatus(f,s){
+  const age=Date.now()-Date.parse(f.updatedAt),qa=Date.now()-Date.parse(s.quoteAt);
+  if(!Number.isFinite(age)||age< -60000||age>180000)return {review:false,why:'Monitor data is stale. Wait for a fresh update.'};
+  if(f.monitor?.enabled!==true)return {review:false,why:'Monitoring is paused.'};
+  if(f.marketHours!==true)return {review:false,why:'Market closed. Showing last observed prices.'};
+  if(!Number.isFinite(qa)||qa< -60000||qa>300000)return {review:false,why:'Quote is stale or unavailable.'};
+  return {review:s.pattern?.qualifies===true,why:s.pattern?.reason||'Waiting for your hourly price pattern.'};
+ }
+ function dockChart(s){
+  const points=(Array.isArray(s.history)?s.history:[]).filter(p=>Number.isFinite(p.price)&&p.price>0&&Number.isFinite(Date.parse(p.at))&&Date.parse(p.at)<=Date.now()+60000).sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)).slice(-13);
+  if(points.length<2)return '<p class="dock-chart-empty">Collecting price history. A line appears after two samples.</p>';
+  const values=points.map(p=>p.price),min=Math.min(...values),max=Math.max(...values),span=max-min;
+  const start=Date.parse(points[0].at),duration=Date.parse(points.at(-1).at)-start;
+  if(duration<=0)return '<p class="dock-chart-empty">Waiting for a new timestamp.</p>';
+  const coords=points.map(p=>({x:6+348*(Date.parse(p.at)-start)/duration,y:span?61-52*(p.price-min)/span:35,at:Date.parse(p.at)}));
+  const direction=values.at(-1)>values[0]?'up':values.at(-1)<values[0]?'down':'flat';
+  let path='';coords.forEach((p,i)=>{path+=(i===0||p.at-coords[i-1].at>450000?'M':'L')+p.x.toFixed(2)+','+p.y.toFixed(2)+' ';});
+  return '<svg viewBox="0 0 360 70" role="img" aria-label="'+esc(s.symbol)+' sampled price trend, from $'+number(values[0])+' to $'+number(values.at(-1))+'" class="dock-chart '+direction+'"><path d="M6 63H354" class="dock-axis"/><path d="'+path+'"/><circle cx="'+coords.at(-1).x+'" cy="'+coords.at(-1).y+'" r="3"/></svg><div class="dock-chart-caption"><span>'+esc(new Date(start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</span><span>Sampled prices · gaps left blank</span><span>'+esc(new Date(points.at(-1).at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</span></div>';
+ }
+ function renderDock(f){
+  dockFeed=f;const stocks=Array.isArray(f.stocks)?f.stocks:[];
+  if(!stocks.some(s=>s.symbol===selectedSymbol))selectedSymbol=stocks[0]?.symbol||'';
+  const count=stocks.filter(s=>dockStatus(f,s).review).length;
+  document.querySelector('#dockCount').textContent=count?count+' REVIEW':'WAIT';
+  const list=document.querySelector('#dockStocks'),key=JSON.stringify(stocks.map(s=>s.symbol));
+  if(list.dataset.symbols!==key){list.dataset.symbols=key;list.innerHTML=stocks.map(s=>'<button class="dock-stock secondary" data-symbol="'+esc(s.symbol)+'">'+esc(s.symbol)+'</button>').join('');list.querySelectorAll('button').forEach(b=>b.onclick=()=>{selectedSymbol=b.dataset.symbol;renderDock(dockFeed);});}
+  list.querySelectorAll('button').forEach(b=>{b.classList.toggle('active',b.dataset.symbol===selectedSymbol);b.setAttribute('aria-pressed',String(b.dataset.symbol===selectedSymbol));});
+  const s=stocks.find(s=>s.symbol===selectedSymbol),detail=document.querySelector('#dockDetail');
+  if(!s){detail.textContent='No monitored stocks available. Add a ticker in Watchlist.';return;}
+  const status=dockStatus(f,s),gain=s.pattern?.gain_percent,hasGain=typeof gain==='number'&&Number.isFinite(gain),dir=!hasGain||gain===0?'flat':gain>0?'up':'down';
+  const order=(f.orders||[]).find(o=>o.symbol===s.symbol);
+  detail.innerHTML='<div class="dock-price"><strong>'+esc(s.symbol)+' '+(typeof s.quote==='number'?'$'+number(s.quote):'Quote unavailable')+'</strong><span class="'+dir+'">'+(hasGain?(gain>0?'▲ +':gain<0?'▼ ':'↔ ')+number(gain,3)+'% sampled hour':'Hourly change unavailable')+'</span><b class="dock-signal '+(status.review?'review':'')+'">'+(status.review?'REVIEW':'WAIT')+'</b></div>'+dockChart(s)+'<p class="dock-reason">'+esc(status.why)+'</p><p class="dock-where"><b>Where:</b> Alpaca → Paper Trading → Recent Orders. '+esc(order?'Latest practice order: '+order.state+'.':'No practice order recorded.')+'</p><small>Quote: '+esc(time(s.quoteAt))+'. REVIEW is a pattern match, not a guarantee.</small>';
+ }
+ function dockUnavailable(){dockFeed=null;document.querySelector('#dockCount').textContent='UNAVAILABLE';document.querySelector('#dockDetail').textContent='Current signals could not be verified. Wait for fresh data; tap ↻ to retry.';document.querySelector('#dockStocks').replaceChildren();delete document.querySelector('#dockStocks').dataset.symbols;}
+
  async function loadSignals(){
-  if(loading)return;loading=true;const refresh=document.querySelector('#refreshSignals');refresh.disabled=true;
+  if(loading)return;loading=true;const refresh=document.querySelector('#refreshSignals');refresh.disabled=true;document.querySelector('#dockRefresh').disabled=true;
   try{
    const f=await api('/api/monitor');
+   renderDock(f);
    const feedAge=Date.now()-Date.parse(f.updatedAt),freshFeed=Number.isFinite(feedAge)&&feedAge>=-60000&&feedAge<=180000;
    const m=f.monitor||{},l=f.learning||{},p=f.paper||{};
    document.querySelector('#signalSummary').innerHTML='<p>'+esc(m.enabled?'Monitoring enabled':'Monitoring paused')+' · '+esc(f.marketHours?'Regular market-hours window':'Outside regular market-hours window')+'<br>Updated '+esc(time(f.updatedAt))+'</p>'+
@@ -224,13 +280,16 @@ async function startApp(){
     return '<div class="item"><h3>'+esc(r.date)+'</h3><pre>'+esc(lines.join('\n'))+'</pre></div>';
    }).join(''):'<p>No completed-session review has been saved yet.</p>';
   }catch(e){
+   dockUnavailable();
    document.querySelector('#signalSummary').innerHTML='<div class="notice error">Signals unavailable: '+esc(e.message)+'. No current action can be verified.</div>';
    document.querySelector('#signalCards').replaceChildren();document.querySelector('#dailyReviews').replaceChildren();
-  }finally{loading=false;refresh.disabled=false;}
+  }finally{loading=false;refresh.disabled=false;document.querySelector('#dockRefresh').disabled=false;}
  }
  document.querySelector('#refreshSignals').onclick=loadSignals;
  window.addEventListener('hashchange',()=>{if(location.hash==='#signals')show('signals');});
- setInterval(()=>{if(!document.hidden&&!view.classList.contains('hidden'))loadSignals();},60000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadSignals();});
+ loadSignals();
+ setInterval(()=>{if(!document.hidden)loadSignals();},60000);
 })();
 
 /* Stock report reader: tap-to-speak only, using the browser's speech service. */
@@ -305,3 +364,4 @@ async function startApp(){
 startApp();
  
 </script></body></html>
+
