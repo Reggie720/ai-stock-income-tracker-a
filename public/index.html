@@ -4,11 +4,11 @@
 <section id="overview" class="view"><div class="grid"><div class="metric">Starting budget<strong id="budgetMetric">$25.00</strong></div><div class="metric">Tracked holdings<strong id="holdingsMetric">0</strong></div><div class="metric">Watchlist<strong id="watchMetric">4</strong></div></div><div class="panel" style="margin-top:15px"><h2>Getting started</h2><p>Research prices and provider-reported dividend records. Open AI Research for a comparison or Dividends for dated payouts and income illustrations. Check the live connection status below.</p><div class="row"><button onclick="show('research')">Ask AI</button><button class="secondary" onclick="show('watchlist')">View Watchlist</button><button class="secondary" onclick="show('settings')">Check Connections</button></div></div><div class="panel"><h2>Live service status</h2><div id="status">Checking…</div></div></section>
 <section id="research" class="view hidden"><div class="panel"><h2>AI Stock Research</h2><p>Research combines Finnhub quotes with dated SmarterDividends records. Missing figures remain unavailable. Income illustrations use provider rates, not AI predictions.</p><label for="question">Your question</label><textarea id="question">Compare SGOV, JEPI, DIVO, and O for someone starting with $25. Explain risks, monthly income limitations, and what data is missing.</textarea><div class="row"><button id="analyze">Analyze stocks</button></div><div id="analysis"></div></div></section>
 <section id="watchlist" class="view hidden"><div class="panel"><h2>Stock Watchlist</h2><p>Starting research candidates, not recommendations to buy.</p><div class="row"><input id="newSymbol" placeholder="Ticker, e.g. VOO" maxlength="12"><button id="addSymbol">Add</button></div><div id="watchRows"></div></div></section>
-<section id="dividends" class="view hidden"><div class="panel"><h2>Monthly Dividend Research</h2><p>Look up the first five tickers on your watchlist. Payout records and future dates are provider-reported and may lag issuer announcements. A monthly average is an illustration, not a promised payment.</p><div class="row"><button id="refreshDividends">Refresh dividend data</button></div><div id="dividendRows"></div><div class="notice">Dividend data: <a href="https://smarterdividends.com/dividend-api" target="_blank" rel="noopener noreferrer">SmarterDividends</a>. Cached for up to one hour. Follow the record and issuer links to verify announcements. No trades are placed by this app.</div></div></section>
-<section id="portfolio" class="view hidden"><div class="panel"><h2>Manual Portfolio</h2><p>Enter shares and total purchase cost only. No brokerage account connection or trades. Entries are saved only after the server confirms them.</p><div class="row"><input id="holdSymbol" placeholder="Ticker"><input id="holdShares" type="number" min="0" step="any" placeholder="Shares"><input id="holdCost" type="number" min="0" step="any" placeholder="Total cost"><button id="addHolding">Save</button></div><div id="holdingRows"></div></div></section>
+<section id="dividends" class="view hidden"><div class="panel"><h2>Monthly Dividend Research</h2><p>Look up the first five tickers on your watchlist. Payout records and future dates are provider-reported and may lag issuer announcements. A monthly average is an illustration, not a promised payment.</p><div class="row"><button id="refreshDividends">Refresh dividend data</button></div><div id="dividendRows"></div><div class="notice">Dividend data: <a href="https://smarterdividends.com/dividend-api" target="_blank" rel="noopener noreferrer">SmarterDividends</a>. Cached for up to one hour. Follow the record and issuer links to verify announcements. Real-money trading is not connected. See Signals for automatic practice orders.</div></div></section>
+<section id="portfolio" class="view hidden"><div class="panel"><h2>Manual Portfolio</h2><p>Enter shares and total purchase cost only. These entries are separate from Alpaca practice orders shown in Signals. Entries are saved only after the server confirms them.</p><div class="row"><input id="holdSymbol" placeholder="Ticker"><input id="holdShares" type="number" min="0" step="any" placeholder="Shares"><input id="holdCost" type="number" min="0" step="any" placeholder="Total cost"><button id="addHolding">Save</button></div><div id="holdingRows"></div></div></section>
 <section id="predictions" class="view hidden"><div class="panel"><h2>Prediction Journal</h2><p>Record your own research hypotheses. No invented accuracy scores or automatic trading.</p><div class="row"><input id="predSymbol" placeholder="Ticker"><select id="predSignal"><option>WAIT</option><option>BUY</option><option>SELL</option></select></div><textarea id="predNote" maxlength="500" placeholder="Why? What would change your view?"></textarea><div class="row"><button id="addPrediction">Save journal entry</button></div><div id="predictionRows"></div></div></section>
 <section id="settings" class="view hidden"><div class="panel"><h2>Setup & Safety</h2><div id="connectionStatus"></div><h3>Budget</h3><div class="row"><input id="budgetInput" type="number" min="0" step="0.01"><button id="saveBudget">Save budget</button></div><h3>Backup</h3><div class="row"><button id="export">Export your data</button><input type="file" id="import" accept=".json,application/json" aria-label="Import backup"></div><div class="notice">API keys belong in server environment variables, not in this page. The included server is for single-user local development. Add authentication, HTTPS, secure storage and deployment protections before exposing it publicly or storing private customer data.</div></div></section>
-<footer>Educational research only · No automated trades · No guaranteed income · Prices may be delayed</footer></main><script>
+<footer>Price-pattern research · Practice trading only · No live brokerage connected · Prices may be delayed</footer></main><script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let state={budget:25,watchlist:['SGOV','JEPI','DIVO','O'],holdings:[],predictions:[]},connected=false;
 function show(tab){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('hidden',x.id!==tab));document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));if(tab==='dividends')loadDividends()}document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>show(b.dataset.tab));
 function msg(s,error=false){$('#message').innerHTML=`<div class="notice ${error?'error':'ok'}">${esc(s)}</div>`;setTimeout(()=>$('#message').replaceChildren(),7000)}
@@ -171,7 +171,67 @@ async function startApp(){
  if(getHistory().length){
   openReport(0);
  }
+ if(location.hash==='#signals')show('signals');
 }
+
+/* Signals and saved daily price reviews from the server-side monitor. */
+(()=>{
+ const button=document.createElement('button');button.dataset.tab='signals';button.textContent='Signals';
+ document.querySelector('[data-tab="research"]').before(button);
+ const view=document.createElement('section');view.id='signals';view.className='view hidden';
+ view.innerHTML='<div class="panel"><h2>When and where to review a stock</h2><p>REVIEW means your hourly price pattern currently matches. WAIT means it does not match, data is stale, or the monitor is unavailable. A match cannot establish that buying will make money.</p><div class="row"><button id="refreshSignals">Refresh signals</button><a href="https://app.alpaca.markets/dashboard" target="_blank" rel="noopener noreferrer">Open Alpaca · choose Paper Trading</a></div><div class="notice">Real-money brokerage: not connected. Practice purchases may happen automatically after checks; inspect Alpaca Recent Orders before placing a duplicate manual practice order.</div><div id="signalSummary" role="status"></div><div id="signalCards"></div></div><div class="panel"><h2>Daily price reviews</h2><p>Saved automatically after each sampled session closes. These reviews summarize observed prices and pattern matches. News, earnings analysis and full fundamental research are not connected.</p><div id="dailyReviews"></div></div>';
+ document.querySelector('#research').before(view);
+ const quick=document.createElement('button');quick.className='secondary';quick.textContent='View signals';quick.onclick=()=>show('signals');
+ document.querySelector('#overview .panel .row').prepend(quick);
+ const originalShow=show;show=function(tab){originalShow(tab);if(tab==='signals')loadSignals();};
+ button.onclick=()=>show('signals');
+ let loading=false;
+ const number=(x,d=2)=>typeof x==='number'&&Number.isFinite(x)?x.toFixed(d):'Unavailable';
+ const time=x=>{const n=Date.parse(x);return Number.isFinite(n)?new Date(n).toLocaleString():'Unavailable';};
+ async function loadSignals(){
+  if(loading)return;loading=true;const refresh=document.querySelector('#refreshSignals');refresh.disabled=true;
+  try{
+   const f=await api('/api/monitor');
+   const feedAge=Date.now()-Date.parse(f.updatedAt),freshFeed=Number.isFinite(feedAge)&&feedAge>=-60000&&feedAge<=180000;
+   const m=f.monitor||{},l=f.learning||{},p=f.paper||{};
+   document.querySelector('#signalSummary').innerHTML='<p>'+esc(m.enabled?'Monitoring enabled':'Monitoring paused')+' · '+esc(f.marketHours?'Regular market-hours window':'Outside regular market-hours window')+'<br>Updated '+esc(time(f.updatedAt))+'</p>'+
+    (!freshFeed?'<div class="notice error">Monitoring data is stale. No current action is shown.</div>':'')+
+    '<p>Learning: '+esc(l.status||'Unavailable')+'<br>'+esc(l.completed_current_rule_examples??0)+' completed examples under this rule; '+esc(l.minimum_examples??40)+' required before an adjustment can be considered.</p>'+
+    '<p>Practice buying: '+esc(p.enabled?'Enabled':'Paused')+' · $'+number(p.dollars_per_order)+' per order · $'+number(p.reserved_or_spent)+' reserved or spent out of $'+number(p.total_cap)+' total.</p>';
+   document.querySelector('#signalCards').innerHTML=(Array.isArray(f.stocks)?f.stocks:[]).map(s=>{
+    const pattern=s.pattern||{},quoteAge=Date.now()-Date.parse(s.quoteAt);
+    const fresh=Number.isFinite(quoteAge)&&quoteAge>=-60000&&quoteAge<=300000;
+    const review=freshFeed&&fresh&&f.marketHours===true&&m.enabled===true&&pattern.qualifies===true;
+    const order=(f.orders||[]).find(o=>o.symbol===s.symbol);
+    const reason=!freshFeed?'Monitor update is stale':!m.enabled?'Monitoring is paused':!f.marketHours?'Wait for the next trading session':!fresh?'No sufficiently fresh quote':pattern.reason||'Hourly pattern does not match';
+    const text=[(review?'REVIEW':'WAIT')+' · '+s.symbol,
+     'Why: '+reason,
+     'Last observed quote: '+(typeof s.quote==='number'?'$'+number(s.quote):'Unavailable')+' · '+time(s.quoteAt),
+     'This quote may be delayed; it is not a bid or an execution price.',
+     'Observed hourly gain: '+number(pattern.gain_percent,3)+'%. Upward steps: '+number(typeof pattern.up_fraction==='number'?pattern.up_fraction*100:null,1)+'%.',
+     'Where: Alpaca → Paper Trading → search '+s.symbol+' → Recent Orders.',
+     'Latest recorded practice-order state: '+(order?order.state+' ('+time(order.createdAt)+')':'No recorded order for this stock.'),
+     'Live buying: unavailable until a live brokerage is connected. There is no live Buy button here.',
+     review?'Next: review the price and practice order in Alpaca. This is a pattern match, not a promise of a profitable trade.':'Next: wait. No current entry setup has passed all displayed checks.'
+    ].join('\n');
+    return '<div class="item"><h3>'+esc(s.symbol)+' · '+(review?'REVIEW':'WAIT')+'</h3><pre>'+esc(text)+'</pre></div>';
+   }).join('')||'<p>No monitored stocks available.</p>';
+   const daily=Array.isArray(f.dailyReviews)?f.dailyReviews:[];
+   document.querySelector('#dailyReviews').innerHTML=daily.length?daily.map(r=>{
+    const lines=['Session: '+r.date,'Hourly-pattern alerts: '+(r.matchedAlerts??0),r.scope||'Daily sampled-price review'];
+    for(const s of r.stocks||[])lines.push(s.symbol+': first observed $'+number(s.firstObservedPrice)+'; last observed $'+number(s.lastObservedPrice)+'; sampled change '+number(s.sampledChangePercent,3)+'%; '+s.samples+' samples.');
+    lines.push('Sampled changes are not full-session returns or trading profits. Missing observations are not filled in by AI.');
+    return '<div class="item"><h3>'+esc(r.date)+'</h3><pre>'+esc(lines.join('\n'))+'</pre></div>';
+   }).join(''):'<p>No completed-session review has been saved yet.</p>';
+  }catch(e){
+   document.querySelector('#signalSummary').innerHTML='<div class="notice error">Signals unavailable: '+esc(e.message)+'. No current action can be verified.</div>';
+   document.querySelector('#signalCards').replaceChildren();document.querySelector('#dailyReviews').replaceChildren();
+  }finally{loading=false;refresh.disabled=false;}
+ }
+ document.querySelector('#refreshSignals').onclick=loadSignals;
+ window.addEventListener('hashchange',()=>{if(location.hash==='#signals')show('signals');});
+ setInterval(()=>{if(!document.hidden&&!view.classList.contains('hidden'))loadSignals();},60000);
+})();
 
 /* Stock report reader: tap-to-speak only, using the browser's speech service. */
 (()=>{
@@ -218,7 +278,7 @@ async function startApp(){
  function sync(){
   if(active&&(!active.target.isConnected||active.target.closest('.view')?.classList.contains('hidden')||reportText(active.target)!==active.text))stop();
   for(const [target,ui] of controls){if(!target.isConnected||!reportText(target)||(target.id.startsWith('quote-')&&!/^\$/.test(reportText(target)))){ui.row.remove();controls.delete(target);}}
-  for(const target of document.querySelectorAll('#analysis pre, #dividendRows pre, #compareResults pre, #watchRows [id^="quote-"]')){
+  for(const target of document.querySelectorAll('#analysis pre, #signals pre, #dividendRows pre, #compareResults pre, #watchRows [id^="quote-"]')){
    const text=reportText(target),isQuote=target.id.startsWith('quote-');
    if(!text||(isQuote&&!/^\$/.test(text)))continue;
    if(controls.has(target))continue;

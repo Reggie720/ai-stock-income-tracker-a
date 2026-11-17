@@ -146,6 +146,14 @@ async function save(x){
  await fs.rename(DATA+'.tmp',DATA);
 }
 
+async function monitorFeed(){
+ const config=storageConfig();
+ if(!config)throw Error('Automatic monitoring requires the configured server storage');
+ const rows=await databaseRequest({...config,url:config.url.replace(/stock_tracker_state$/,'stock_tracker_monitor_feed')},'?id=eq.main&select=data');
+ if(rows.length!==1||!rows[0].data||typeof rows[0].data!=='object')throw Error('Monitoring status is not ready; retry shortly');
+ return rows[0].data;
+}
+
 async function storageStatus(){
  try{
   const config=storageConfig();
@@ -716,6 +724,10 @@ const server=http.createServer(async(req,res)=>{
      mode:'password-protected single-user tracker',
      storage:await storageStatus()
     });
+   }
+
+   if(url.pathname==='/api/monitor'&&req.method==='GET'){
+    return send(res,200,await monitorFeed());
    }
 
    if(url.pathname==='/api/state'&&req.method==='GET'){
