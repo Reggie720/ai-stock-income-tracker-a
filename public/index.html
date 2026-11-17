@@ -8,7 +8,7 @@ body.dock-expanded{--dock-height:50dvh}body.dock-mini{--dock-height:52px}
 @media(min-width:800px){#marketDock{width:440px;right:16px;border-radius:14px 14px 0 0}body.with-market-dock{padding-bottom:calc(var(--dock-height) + 12px)}}
 @media(max-width:360px){.dock-head{gap:4px;padding:6px}.dock-head strong{font-size:12px}.dock-head button{padding:6px}.dock-price{gap:5px}}
 
-</style></head><body><header><h1>📈 AI Stock Income Tracker</h1><p>Research first. Protect your money. You approve every trade.</p></header><main><div class="tabs" id="tabs"><button data-tab="overview" class="active">Overview</button><button data-tab="research">AI Research</button><button data-tab="watchlist">Watchlist</button><button data-tab="dividends">Dividends</button><button data-tab="portfolio">Portfolio</button><button data-tab="predictions">Predictions</button><button data-tab="settings">Setup</button></div><div id="message"></div>
+.dock-chart-controls{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:6px}.dock-chart-controls label{display:flex;align-items:center;gap:3px;font-size:11px;margin:0}.dock-chart-controls select,.dock-chart-controls button{font-size:11px;padding:4px 6px;width:auto;min-width:0;margin:0}.dock-chart-controls small{font-size:10px}</style></head><body><header><h1>📈 AI Stock Income Tracker</h1><p>Research first. Protect your money. You approve every trade.</p></header><main><div class="tabs" id="tabs"><button data-tab="overview" class="active">Overview</button><button data-tab="research">AI Research</button><button data-tab="watchlist">Watchlist</button><button data-tab="dividends">Dividends</button><button data-tab="portfolio">Portfolio</button><button data-tab="predictions">Predictions</button><button data-tab="settings">Setup</button></div><div id="message"></div>
 <section id="overview" class="view"><div class="grid"><div class="metric">Starting budget<strong id="budgetMetric">$25.00</strong></div><div class="metric">Tracked holdings<strong id="holdingsMetric">0</strong></div><div class="metric">Watchlist<strong id="watchMetric">4</strong></div></div><div class="panel" style="margin-top:15px"><h2>Getting started</h2><p>Research prices and provider-reported dividend records. Open AI Research for a comparison or Dividends for dated payouts and income illustrations. Check the live connection status below.</p><div class="row"><button onclick="show('research')">Ask AI</button><button class="secondary" onclick="show('watchlist')">View Watchlist</button><button class="secondary" onclick="show('settings')">Check Connections</button></div></div><div class="panel"><h2>Live service status</h2><div id="status">Checking…</div></div></section>
 <section id="research" class="view hidden"><div class="panel"><h2>AI Stock Research</h2><p>Research combines Finnhub quotes with dated SmarterDividends records. Missing figures remain unavailable. Income illustrations use provider rates, not AI predictions.</p><label for="question">Your question</label><textarea id="question">Compare SGOV, JEPI, DIVO, and O for someone starting with $25. Explain risks, monthly income limitations, and what data is missing.</textarea><div class="row"><button id="analyze">Analyze stocks</button></div><div id="analysis"></div></div></section>
 <section id="watchlist" class="view hidden"><div class="panel"><h2>Stock Watchlist</h2><p>Starting research candidates, not recommendations to buy.</p><div class="row"><input id="newSymbol" placeholder="Ticker, e.g. VOO" maxlength="12"><button id="addSymbol">Add</button></div><div id="watchRows"></div></div></section>
@@ -216,16 +216,44 @@ async function startApp(){
   if(!Number.isFinite(qa)||qa< -60000||qa>300000)return {review:false,why:'Quote is stale or unavailable.'};
   return {review:s.pattern?.qualifies===true,why:s.pattern?.reason||'Waiting for your hourly price pattern.'};
  }
+
+ let chartStyle='line',chartInterval=5,chartZoom=1;
+ try{const p=JSON.parse(localStorage.getItem('tracker-chart-settings')||'{}');if(['line','area','candle','bar'].includes(p.style))chartStyle=p.style;if([1,5,15,30,60,1440,10080,43200].includes(p.interval))chartInterval=p.interval;if([1,2,4].includes(p.zoom))chartZoom=p.zoom;}catch{}
+ function chartControls(){
+  return '<div class="dock-chart-controls"><label>Style <select id="chartStyle">'+[['line','Line'],['candle','Candlestick'],['bar','OHLC bars'],['area','Area']].map(([v,t])=>'<option value="'+v+'" '+(chartStyle===v?'selected':'')+'>'+t+'</option>').join('')+'</select></label><label>Interval <select id="chartInterval">'+[[1,'1m'],[5,'5m'],[15,'15m'],[30,'30m'],[60,'1H'],[1440,'1D'],[10080,'1W'],[43200,'30D']].map(([v,t])=>'<option value="'+v+'" '+(chartInterval===v?'selected':'')+'>'+t+'</option>').join('')+'</select></label><button id="chartOut" aria-label="Zoom out" '+(chartZoom===1?'disabled':'')+'>−</button><button id="chartIn" aria-label="Zoom in" '+(chartZoom===4?'disabled':'')+'>+</button><small>'+chartZoom+'×</small></div>';
+ }
  function dockChart(s){
-  const points=(Array.isArray(s.history)?s.history:[]).filter(p=>Number.isFinite(p.price)&&p.price>0&&Number.isFinite(Date.parse(p.at))&&Date.parse(p.at)<=Date.now()+60000).sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)).slice(-13);
-  if(points.length<2)return '<p class="dock-chart-empty">Collecting price history. A line appears after two samples.</p>';
-  const values=points.map(p=>p.price),min=Math.min(...values),max=Math.max(...values),span=max-min;
-  const start=Date.parse(points[0].at),duration=Date.parse(points.at(-1).at)-start;
-  if(duration<=0)return '<p class="dock-chart-empty">Waiting for a new timestamp.</p>';
-  const coords=points.map(p=>({x:6+348*(Date.parse(p.at)-start)/duration,y:span?61-52*(p.price-min)/span:35,at:Date.parse(p.at)}));
-  const direction=values.at(-1)>values[0]?'up':values.at(-1)<values[0]?'down':'flat';
-  let path='';coords.forEach((p,i)=>{path+=(i===0||p.at-coords[i-1].at>450000?'M':'L')+p.x.toFixed(2)+','+p.y.toFixed(2)+' ';});
-  return '<svg viewBox="0 0 360 70" role="img" aria-label="'+esc(s.symbol)+' sampled price trend, from $'+number(values[0])+' to $'+number(values.at(-1))+'" class="dock-chart '+direction+'"><path d="M6 63H354" class="dock-axis"/><path d="'+path+'"/><circle cx="'+coords.at(-1).x+'" cy="'+coords.at(-1).y+'" r="3"/></svg><div class="dock-chart-caption"><span>'+esc(new Date(start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</span><span>Sampled prices · gaps left blank</span><span>'+esc(new Date(points.at(-1).at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))+'</span></div>';
+  const raw=(Array.isArray(s.history)?s.history:[]).filter(p=>Number.isFinite(p.price)&&p.price>0&&Number.isFinite(Date.parse(p.at))&&Date.parse(p.at)<=Date.now()+60000).map(p=>({at:Date.parse(p.at),price:p.price})).sort((a,b)=>a.at-b.at);
+  const controls=chartControls(),empty=t=>controls+'<p class="dock-chart-empty">'+t+'</p>';
+  if(raw.length<2)return empty('Collecting observed prices. At least two samples are needed.');
+  const interval=chartInterval*60000, buckets=new Map();
+  for(const p of raw){const at=Math.floor(p.at/interval)*interval;let q=buckets.get(at);if(!q){q={at,open:p.price,high:p.price,low:p.price,close:p.price,count:0};buckets.set(at,q);}q.high=Math.max(q.high,p.price);q.low=Math.min(q.low,p.price);q.close=p.price;q.count++;}
+  const all=[...buckets.values()], points=all.slice(-Math.max(2,Math.ceil(all.length/chartZoom)));
+  if(points.length<2)return empty('Not enough observed history for this interval. Choose a shorter interval. No prices are invented.');
+  const min=Math.min(...points.map(p=>p.low)),max=Math.max(...points.map(p=>p.high)),span=max-min;
+  const start=points[0].at,end=points.at(-1).at,duration=end-start;
+  const x=p=>12+336*(p.at-start)/duration,y=v=>span?61-52*(v-min)/span:35;
+  const direction=points.at(-1).close>points[0].close?'up':points.at(-1).close<points[0].close?'down':'flat';
+  const width=Math.max(1,Math.min(10,336*interval/duration*.55));let marks='';
+  if(chartStyle==='candle'||chartStyle==='bar'){
+   for(const p of points){const cx=x(p),o=y(p.open),cl=y(p.close),color=p.close>p.open?'#7ce5bc':p.close<p.open?'#ff9b9b':'#bed0ea';
+    marks+='<line x1="'+cx+'" x2="'+cx+'" y1="'+y(p.high)+'" y2="'+y(p.low)+'" stroke="'+color+'" stroke-width="1"/>';
+    if(chartStyle==='candle')marks+='<rect x="'+(cx-width/2)+'" y="'+Math.min(o,cl)+'" width="'+width+'" height="'+Math.max(1,Math.abs(o-cl))+'" fill="'+color+'"/>';
+    else marks+='<path d="M'+(cx-width/2)+' '+o+'H'+cx+' M'+cx+' '+cl+'H'+(cx+width/2)+'" style="stroke:'+color+';stroke-width:1.5"/>';
+   }
+  }else{
+   let groups=[],g=[];for(const p of points){if(g.length&&p.at-g.at(-1).at>interval*1.5){groups.push(g);g=[];}g.push(p);}if(g.length)groups.push(g);
+   for(const group of groups){const d=group.map((p,i)=>(i?'L':'M')+x(p)+' '+y(p.close)).join(' ');if(chartStyle==='area'&&group.length>1)marks+='<path d="'+d+' L'+x(group.at(-1))+' 63 L'+x(group[0])+' 63 Z" style="fill:currentColor;fill-opacity:.18;stroke:none"/>';marks+='<path d="'+d+'"/>';if(group.length===1)marks+='<circle cx="'+x(group[0])+'" cy="'+y(group[0].close)+'" r="2"/>';}
+  }
+  const stamp=t=>new Date(t).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  return controls+'<svg viewBox="0 0 360 70" role="img" aria-label="'+esc(s.symbol)+' sampled '+chartStyle+' chart" class="dock-chart '+direction+'"><path d="M6 63H354" class="dock-axis"/>'+marks+'</svg><div class="dock-chart-caption"><span>'+esc(stamp(start))+'</span><span>$'+number(min)+'–$'+number(max)+'</span><span>'+esc(stamp(end))+'</span></div><small>Observed samples only · '+points.length+' intervals · '+(chartStyle==='candle'||chartStyle==='bar'?'Sample-derived OHLC, not exchange candles. ':'')+'Gaps are not filled; history may be delayed.</small>';
+ }
+ function wireChartControls(){
+  const save=()=>{try{localStorage.setItem('tracker-chart-settings',JSON.stringify({style:chartStyle,interval:chartInterval,zoom:chartZoom}));}catch{}if(dockFeed)renderDock(dockFeed);};
+  const style=document.querySelector('#chartStyle'),interval=document.querySelector('#chartInterval');
+  if(!style||!interval)return;
+  style.onchange=()=>{chartStyle=style.value;save();};interval.onchange=()=>{chartInterval=Number(interval.value);save();};
+  document.querySelector('#chartIn').onclick=()=>{chartZoom=Math.min(4,chartZoom*2);save();};document.querySelector('#chartOut').onclick=()=>{chartZoom=Math.max(1,chartZoom/2);save();};
  }
  function renderDock(f){
   dockFeed=f;const stocks=Array.isArray(f.stocks)?f.stocks:[];
@@ -240,6 +268,7 @@ async function startApp(){
   const status=dockStatus(f,s),gain=s.pattern?.gain_percent,hasGain=typeof gain==='number'&&Number.isFinite(gain),dir=!hasGain||gain===0?'flat':gain>0?'up':'down';
   const order=(f.orders||[]).find(o=>o.symbol===s.symbol);
   detail.innerHTML='<div class="dock-price"><strong>'+esc(s.symbol)+' '+(typeof s.quote==='number'?'$'+number(s.quote):'Quote unavailable')+'</strong><span class="'+dir+'">'+(hasGain?(gain>0?'▲ +':gain<0?'▼ ':'↔ ')+number(gain,3)+'% sampled hour':'Hourly change unavailable')+'</span><b class="dock-signal '+(status.review?'review':'')+'">'+(status.review?'REVIEW':'WAIT')+'</b></div>'+dockChart(s)+'<p class="dock-reason">'+esc(status.why)+'</p><p class="dock-where"><b>Where:</b> Alpaca → Paper Trading → Recent Orders. '+esc(order?'Latest practice order: '+order.state+'.':'No practice order recorded.')+'</p><small>Quote: '+esc(time(s.quoteAt))+'. REVIEW is a pattern match, not a guarantee.</small>';
+  wireChartControls();
  }
  function dockUnavailable(){dockFeed=null;document.querySelector('#dockCount').textContent='UNAVAILABLE';document.querySelector('#dockDetail').textContent='Current signals could not be verified. Wait for fresh data; tap ↻ to retry.';document.querySelector('#dockStocks').replaceChildren();delete document.querySelector('#dockStocks').dataset.symbols;}
 
