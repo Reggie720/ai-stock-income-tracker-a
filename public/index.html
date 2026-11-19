@@ -180,6 +180,7 @@ async function startApp(){
   openReport(0);
  }
  if(location.hash==='#signals')show('signals');
+ if(location.hash==='#coinbase')show('settings');
 }
 
 /* Signals and saved daily price reviews from the server-side monitor. */
@@ -315,7 +316,8 @@ async function startApp(){
   }finally{loading=false;refresh.disabled=false;document.querySelector('#dockRefresh').disabled=false;}
  }
  document.querySelector('#refreshSignals').onclick=loadSignals;
- window.addEventListener('hashchange',()=>{if(location.hash==='#signals')show('signals');});
+ window.addEventListener('hashchange',()=>{if(location.hash==='#signals')show('signals');
+ if(location.hash==='#coinbase')show('settings');});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadSignals();});
  loadSignals();
  setInterval(()=>{if(!document.hidden)loadSignals();},60000);
@@ -390,7 +392,33 @@ async function startApp(){
  sync();
 })();
 
+/* A server-verified Coinbase connection, independent of the ChatGPT plugin. */
+(()=>{
+ const panel=document.createElement('div');panel.className='panel';panel.id='coinbaseConnection';
+ panel.innerHTML='<h2>Coinbase connection</h2><p>This checks your tracker’s own connection. Installing the Coinbase ChatGPT plugin does not connect this app.</p><button id="checkCoinbase">Check Coinbase connection</button><div id="coinbaseResult" role="status">Connection has not been checked.</div><details><summary>Finish secure setup</summary><ol><li>Open <a href="https://portal.cdp.coinbase.com/api-keys/secret" target="_blank" rel="noopener noreferrer">Coinbase developer keys</a> and create a secret API key for this tracker. Select only your intended account. Enable View for this account check; leave Trade and Transfer off for now.</li><li>In <a href="https://dashboard.render.com/web/srv-dbqb36jbc2fs73e912ug/env" target="_blank" rel="noopener noreferrer">Render → Environment</a>, add <code>COINBASE_API_KEY_JSON</code> with the downloaded key JSON as its value, then Save and deploy. Do not paste it into this app, chat, or a public repository.</li><li>Return here and tap Check Coinbase connection. A green verified result means this app can read the selected account.</li></ol><p>This release has no Coinbase buy, sell, withdrawal or automatic-order endpoint. Authorizing trades will require a separate tested implementation and your purchase limits.</p></details>';
+ document.querySelector('#settings').prepend(panel);
+ const quick=document.createElement('button');quick.className='secondary';quick.textContent='Coinbase connection';quick.onclick=()=>{show('settings');panel.scrollIntoView({behavior:'smooth',block:'start'});};
+ document.querySelector('#overview .panel .row').appendChild(quick);
+ const original=show;show=function(tab){original(tab);if(tab==='settings')checkCoinbase();};
+ let loading=false;
+ function money(value){if(typeof value!=='string'||!/^\d+(\.\d+)?$/.test(value))return 'Unavailable';const n=Number(value);return Number.isFinite(n)?'$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'Unavailable';}
+ async function checkCoinbase(){
+  if(loading)return;loading=true;const button=document.querySelector('#checkCoinbase'),output=document.querySelector('#coinbaseResult');button.disabled=true;output.textContent='Checking your tracker’s Coinbase connection…';
+  try{
+   const s=await api('/api/coinbase/status');
+   if(s.connected===true&&s.mode==='read-only'){
+    const t=s.totals||{};
+    output.innerHTML='<div class="notice ok"><strong>Connected directly · read-only</strong><br>'+esc(s.portfolioName||'Selected portfolio')+' · Checked '+esc(new Date(s.checkedAt).toLocaleString())+'</div><p>Total holdings: '+money(t.total)+'<br>Crypto, including staked holdings: '+money(t.crypto)+'<br>Cash & stablecoin equivalents: '+money(t.cashEquivalent)+'<br>Stock holdings: '+money(t.stocks)+'</p><p>'+esc(s.message)+'</p><strong>Automatic buying: OFF · Coinbase orders: OFF</strong>';
+   }else{output.innerHTML='<div class="notice">'+esc(s.message||'Coinbase connection could not be verified.')+'</div><p>Tracker connected: No · Automatic buying: OFF</p>';}
+  }catch(e){output.textContent='Coinbase connection could not be verified. Automatic buying is OFF. '+e.message;}
+  finally{loading=false;button.disabled=false;}
+ }
+ document.querySelector('#checkCoinbase').onclick=checkCoinbase;
+ window.addEventListener('hashchange',()=>{if(location.hash==='#coinbase'){show('settings');panel.scrollIntoView({behavior:'smooth',block:'start'});}});
+})();
+
 startApp();
  
 </script></body></html>
+
 

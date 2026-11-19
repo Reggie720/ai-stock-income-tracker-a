@@ -1,4 +1,6 @@
 import http from 'node:http';
+import {createCoinbaseReader} from './coinbase-reader.js';
+let coinbaseStatus;
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -726,6 +728,10 @@ const server=http.createServer(async(req,res)=>{
     });
    }
 
+   if(url.pathname==='/api/coinbase/status'&&req.method==='GET'){
+    return send(res,200,await (coinbaseStatus ||= createCoinbaseReader())());
+   }
+
    if(url.pathname==='/api/monitor'&&req.method==='GET'){
     return send(res,200,await monitorFeed());
    }
@@ -817,3 +823,4 @@ const server=http.createServer(async(req,res)=>{
 server.listen(PORT,HOST,()=>{
  console.log(`AI Stock Income running at http://${HOST}:${PORT}`);
 });
+
