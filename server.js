@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {createCoinbaseReader} from './coinbase-reader.js';
+import {savingsStatus, savingsIllustration} from './savings-rule.js';
 let coinbaseStatus;
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -730,6 +731,17 @@ const server=http.createServer(async(req,res)=>{
 
    if(url.pathname==='/api/coinbase/status'&&req.method==='GET'){
     return send(res,200,await (coinbaseStatus ||= createCoinbaseReader())());
+   }
+
+   if(url.pathname==='/api/savings'&&req.method==='GET'){
+    return send(res,200,savingsStatus());
+   }
+
+   // Arithmetic illustration only: no account reads, ledger writes or transfers.
+   if(url.pathname==='/api/savings/illustrate'&&req.method==='POST'){
+    const input=await body(req,1024);
+    try{return send(res,200,savingsIllustration(input.balance));}
+    catch{return send(res,400,{error:'Enter a dollar amount with at most two decimals'});}
    }
 
    if(url.pathname==='/api/monitor'&&req.method==='GET'){

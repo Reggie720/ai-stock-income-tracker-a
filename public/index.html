@@ -392,6 +392,36 @@ async function startApp(){
  sync();
 })();
 
+/* Owner's savings rule. No financial write or fabricated account balance. */
+(()=>{
+ const tab=document.createElement('button');tab.dataset.tab='savings';tab.textContent='Savings';tab.onclick=()=>show('savings');
+ document.querySelector('[data-tab="settings"]').before(tab);
+ const section=document.createElement('section');section.id='savings';section.className='view hidden';
+ section.innerHTML=`<div class="panel"><h2>My savings reserve</h2><div id="savingsStatus" role="status">Checking rule…</div><p>When the bot’s trading balance goes <strong>above $200</strong>, set aside <strong>50% of that balance</strong>. Existing savings stays out of the next split.</p><p>A $300 trading balance would leave $150 for savings and $150 for trading. At exactly $200, no split occurs.</p><p>The reserve needs settled dollars. Stock value, crypto and unsettled proceeds do not become withdrawable cash automatically. No assets are sold to fund this rule.</p><details><summary>How repeat splits work</summary><p>One split per crossing. If the remaining trading balance is still above $200, another split waits until it falls to $200 or below and later grows above $200 again.</p></details><h3>Try the rule</h3><p>Illustration only; this does not change your Coinbase balance.</p><label for="savingsExample">Example trading balance in dollars</label><div class="row"><input id="savingsExample" inputmode="decimal" type="text" value="300.00"><button id="previewSavings">Calculate example</button></div><p id="savingsExampleResult" role="status"></p><h3>Withdrawals</h3><p>No savings withdrawal or PayPal connection is enabled in this app. The rule above is prepared; live allocation is waiting for the trading engine.</p></div>`;
+ document.querySelector('main footer').before(section);
+ let pending=false;
+ async function refreshSavings(){
+  if(pending)return;pending=true;const output=document.querySelector('#savingsStatus');
+  try{const s=await api('/api/savings');
+   if(s.liveAllocationEnabled!==false||s.reserve!==null||s.withdrawable!==null)throw Error('Unsupported savings response');
+   output.textContent='Savings rule: prepared · Automatic allocation: OFF · Savings balance: not established. '+s.message;
+  }catch{output.textContent='Savings status unavailable. No savings balance or withdrawal is verified.';}
+  finally{pending=false;}
+ }
+ document.querySelector('#previewSavings').onclick=async()=>{
+  const button=document.querySelector('#previewSavings'),out=document.querySelector('#savingsExampleResult');button.disabled=true;
+  try{const r=await post('/api/savings/illustrate',{balance:document.querySelector('#savingsExample').value.trim()});
+   if(r.illustrationOnly!==true)throw Error('Unverified illustration');
+   out.textContent=r.triggers?'Example only: $'+r.savings+' to savings; $'+r.trading+' stays for trading. Requires enough settled dollars. No funds moved.':'Example only: no split at $'+r.balance+'. Trading balance must be above $200.';
+  }catch(e){out.textContent='Example unavailable: '+e.message;}
+  finally{button.disabled=false;}
+ };
+ const previous=show;show=function(name){previous(name);if(name==='savings')refreshSavings();};
+ const openSavings=()=>{if(location.hash==='#savings'){show('savings');section.scrollIntoView({behavior:'smooth',block:'start'});}};
+ window.addEventListener('hashchange',openSavings);
+ openSavings();
+})();
+
 /* A server-verified Coinbase connection, independent of the ChatGPT plugin. */
 (()=>{
  const panel=document.createElement('div');panel.className='panel';panel.id='coinbaseConnection';
