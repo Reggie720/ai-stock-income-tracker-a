@@ -8,7 +8,7 @@ const execute=promisify(execFile),require=createRequire(import.meta.url);
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const decimal=v=>typeof v==='string'&&/^\d+(\.\d+)?$/.test(v)?v:null;
 const base={provider:'Coinbase',mode:'read-only',liveOrdersEnabled:false,automaticTrading:false,stockApproval:'not_verified'};
-function config(env){
+export function coinbaseConfig(env){
  let keyId=env.COINBASE_KEY_ID||'',secret=env.COINBASE_KEY_SECRET||'';
  if(env.COINBASE_API_KEY_JSON){
   try{const v=JSON.parse(env.COINBASE_API_KEY_JSON);keyId=v.name??v.id;secret=v.privateKey??v.secret;}catch{return {error:'The Coinbase server key JSON is invalid. Replace it in Render Environment.'};}
@@ -20,7 +20,13 @@ function config(env){
  return {keyId,secret:secret.replace(/\\n/g,'\n'),portfolio};
 }
 // Only fixed read commands reach the official CLI. No shell, credentials in argv, writes or request history.
-async function runCli(args,cfg){
+export async function runCoinbaseRead(args,cfg){
+ const fixed=(args.length===2&&args[0]==='portfolios'&&args[1]==='list')||
+  (args.length===4&&args[0]==='portfolios'&&args[1]==='get'&&uuid.test(args[2])&&args[3]==='currency==USD')||
+  (args.length===2&&args[0]==='api-key'&&args[1]==='permissions')||
+  (args[0]==='balance'&&args.length>=3&&args.length<=4&&/^portfolio_id==[a-f0-9-]{36}$/i.test(args[1])&&args[2]==='show_zero==true'&&
+   (args.length===3||/^cursor==[A-Za-z0-9_=.-]{1,1024}$/.test(args[3])));
+ if(!fixed)throw Error('Unsupported read command');
  const cli=path.join(path.dirname(require.resolve('@coinbase/coinbase-cli/package.json')),'dist','index.js');
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'tracker-coinbase-read-'));
  try{
@@ -33,10 +39,10 @@ async function runCli(args,cfg){
   const safe=Error(kind);safe.kind=kind;throw safe;
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 }
-export function createCoinbaseReader({env=process.env,runner=runCli,now=Date.now}={}){
+export function createCoinbaseReader({env=process.env,runner=runCoinbaseRead,now=Date.now}={}){
  let cached=null,cachedAt=0,inflight=null;
  return async function status(){
-  const cfg=config(env);
+  const cfg=coinbaseConfig(env);
   if(cfg.missing)return {...base,configured:false,connected:false,status:'setup_required',message:'Your tracker needs its own Coinbase server key. The ChatGPT plugin does not supply it.'};
   if(cfg.error)return {...base,configured:false,connected:false,status:'configuration_error',message:cfg.error};
   if(cached&&now()-cachedAt<60000)return cached;

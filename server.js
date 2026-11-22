@@ -1,6 +1,8 @@
 import http from 'node:http';
 import {createCoinbaseReader} from './coinbase-reader.js';
 import {savingsStatus, savingsIllustration} from './savings-rule.js';
+import {createTradingReadiness} from './trading-readiness.js';
+let tradingReadiness;
 let coinbaseStatus;
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -735,6 +737,14 @@ const server=http.createServer(async(req,res)=>{
 
    if(url.pathname==='/api/savings'&&req.method==='GET'){
     return send(res,200,savingsStatus());
+   }
+
+   if(url.pathname==='/api/trading/readiness'&&req.method==='GET'){
+    return send(res,200,await (tradingReadiness ||= createTradingReadiness())());
+   }
+
+   if(url.pathname==='/api/trading/start'&&req.method==='POST'){
+    return send(res,409,{error:'Automatic trading is not installed or ready. No orders were enabled.',automaticTrading:false});
    }
 
    // Arithmetic illustration only: no account reads, ledger writes or transfers.

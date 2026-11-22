@@ -12,7 +12,7 @@ test('portfolio, journal and backups survive restarts and overlapping requests',
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'stock-lifecycle-'));
  let child;
  t.after(async()=>{if(child&&child.exitCode===null){child.kill();await once(child,'exit');}await fs.rm(directory,{recursive:true,force:true});});
- for(const name of ['server.js','dividends.js','coinbase-reader.js','savings-rule.js'])await fs.copyFile(new URL('./'+name,import.meta.url),path.join(directory,name));
+ for(const name of ['server.js','dividends.js','coinbase-reader.js','savings-rule.js','trading-readiness.js'])await fs.copyFile(new URL('./'+name,import.meta.url),path.join(directory,name));
  await fs.writeFile(path.join(directory,'package.json'),'{"type":"module"}');
  await fs.mkdir(path.join(directory,'public'));await fs.copyFile(new URL('./public/index.html',import.meta.url),path.join(directory,'public','index.html'));
  // Fake AI only in this isolated test copy; never call a real provider or user data.

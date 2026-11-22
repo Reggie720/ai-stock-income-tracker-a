@@ -392,6 +392,30 @@ async function startApp(){
  sync();
 })();
 
+/* Readiness only. This page cannot start a live order engine. */
+(()=>{
+ const tab=document.createElement('button');tab.dataset.tab='trading';tab.textContent='Trading setup';tab.onclick=()=>show('trading');
+ document.querySelector('[data-tab="settings"]').before(tab);
+ const section=document.createElement('section');section.id='trading';section.className='view hidden';
+ section.innerHTML=`<div class="panel"><h2>Automatic trading setup</h2><p><strong>Automatic buying and selling: OFF</strong></p><p>Selected money limits: $25 total buying budget including fees; stop new buys at $10 in losses; save 50% when the trading balance goes above $200. The loss threshold is not a guaranteed maximum loss.</p><p>Proposed watchlist: SGOV, JEPI, DIVO and O. Specific entry, exit and order-size terms still need a trading plan.</p><button id="checkTradingSetup">Check trading setup</button><div id="tradingSetupResult" role="status">Check the tracker’s own key permission and spendable USD.</div><p><button disabled title="The live order engine is not installed">Start automatic trading — unavailable</button></p><p>This checks access only. It does not install or activate a trading engine. No assets are sold, no permissions are changed and no money is transferred.</p><details><summary>What remains before live trading</summary><p>The live buy/sell engine, durable order ledger and scheduler must be implemented and tested. Stock approval and execution costs must be established; the installed Coinbase interface does not provide stock order previews. The Start control remains unavailable until these requirements are resolved.</p></details></div>`;
+ document.querySelector('main footer').before(section);
+ let pending=false;
+ async function check(){
+  if(pending)return;pending=true;const button=document.querySelector('#checkTradingSetup'),out=document.querySelector('#tradingSetupResult');button.disabled=true;out.textContent='Checking the tracker’s Coinbase key and USD…';
+  try{const r=await api('/api/trading/readiness');if(!Array.isArray(r.blockers)||r.automaticTrading!==false||r.ordersEnabled!==false)throw Error('Unsupported readiness response');
+   out.replaceChildren();const summary=document.createElement('p');
+   summary.textContent='Trade permission: '+(r.canTrade===true?'verified':r.canTrade===false?'not enabled':'not verified')+' · Available USD: '+(typeof r.spendableUsd==='string'?r.spendableUsd:'not verified');out.append(summary);
+   const list=document.createElement('ul');for(const b of r.blockers){const li=document.createElement('li');li.textContent=String(b.message||'Unresolved requirement');list.append(li);}out.append(list);
+   const stamp=document.createElement('small');stamp.textContent=r.checkedAt?'Checked '+new Date(r.checkedAt).toLocaleString():'Account check incomplete';out.append(stamp);
+  }catch{out.textContent='Trading readiness could not be verified. Automatic buying and selling remain OFF.';}
+  finally{pending=false;button.disabled=false;}
+ }
+ document.querySelector('#checkTradingSetup').onclick=check;
+ const prev=show;show=function(name){prev(name);if(name==='trading')check();};
+ const deepLink=()=>{if(location.hash==='#trading'){show('trading');section.scrollIntoView({behavior:'smooth',block:'start'});}};
+ window.addEventListener('hashchange',deepLink);deepLink();
+})();
+
 /* Owner's savings rule. No financial write or fabricated account balance. */
 (()=>{
  const tab=document.createElement('button');tab.dataset.tab='savings';tab.textContent='Savings';tab.onclick=()=>show('savings');
