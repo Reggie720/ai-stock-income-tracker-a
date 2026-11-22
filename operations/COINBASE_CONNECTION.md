@@ -1,6 +1,8 @@
+> The account checker below remains read-only. The separately implemented live engine, owner activation, execution checks and limitations are documented in [TRADING_SETUP.md](TRADING_SETUP.md).
+
 # Direct Coinbase account reader
 
-This is separate from the official Coinbase ChatGPT plugin. The app's authenticated `GET /api/coinbase/status` invokes the pinned official `@coinbase/coinbase-cli` 0.0.11 using fixed portfolio-list/get commands. No order, conversion, transfer, deposit, or withdrawal command is exposed. This release cannot enable real-money automatic trading.
+This is separate from the official Coinbase ChatGPT plugin. The app's authenticated `GET /api/coinbase/status` invokes the pinned official `@coinbase/coinbase-cli` 0.0.11 using fixed portfolio-list/get commands. No order, conversion, transfer, deposit, or withdrawal command is exposed. This reader cannot enable orders; activation belongs to the separate owner-reviewed engine.
 
 ## Owner authorization
 
@@ -19,6 +21,6 @@ A successful check proves read access to the selected account, not stock-trading
 - `node operations/verify-coinbase-connection.mjs` (isolated real server; no live provider)
 - UI verification used the existing linkedom sandbox to check the new panel, stale/failed responses, escaped provider text, and existing Signals/read-aloud behavior.
 
-Sources checked during implementation: https://docs.cdp.coinbase.com/coinbase-for-agents/skill.md and the official CLI npm package README/command help. A separate tested order workflow and explicit user limits would be required before any future write capability.
+Sources checked during implementation: https://docs.cdp.coinbase.com/coinbase-for-agents/skill.md and the official CLI npm package README/command help. The separate bounded engine now supplies an explicit owner-reviewed order workflow; see TRADING_SETUP.md.
 
 The legacy full suite is not clean: older research expectations and unauthenticated lifecycle fixtures fail. The targeted reader, dividend, authenticated-connection, and UI checks listed above passed.

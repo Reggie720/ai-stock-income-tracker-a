@@ -9,12 +9,12 @@ function runner({trade=false,cash='0',failPermission=false,hasNext=false}={}){re
  return {portfolio_id:id,has_next:hasNext,cursor:hasNext?'repeat':null,accounts:[{currency:'USD',ready:true,active:true,available_balance:{currency:'USD',value:cash}}]};
 };}
 test('read-only key and zero USD are distinct verified blockers; user terms recorded; no engine activation',async()=>{
- const r=await createTradingReadiness({env,runner:runner()})();assert.equal(r.canTrade,false);assert.equal(r.spendableUsd,'0');assert.equal(r.terms.stopNewBuysAtLoss,'10.00');assert.equal(r.terms.totalBudget,'25.00');assert.equal(r.engineInstalled,false);assert.equal(r.ordersEnabled,false);assert.equal(r.automaticTrading,false);
- for(const c of ['trade_permission','no_usd','engine_not_installed','stock_preview_unavailable'])assert.ok(r.blockers.some(b=>b.code===c));
+ const r=await createTradingReadiness({env,runner:runner()})();assert.equal(r.canTrade,false);assert.equal(r.spendableUsd,'0');assert.equal(r.terms.stopNewBuysAtLoss,'10.00');assert.equal(r.terms.totalBudget,'25.00');assert.equal(r.engineInstalled,true);assert.equal(r.ordersEnabled,false);assert.equal(r.automaticTrading,false);
+ for(const c of ['trade_permission','no_usd','strategy_review_required'])assert.ok(r.blockers.some(b=>b.code===c));
  assert.doesNotMatch(JSON.stringify(r),new RegExp(id+'|fictional-secret'));
 });
-test('even trade grant and USD do not prove stock eligibility or install an engine',async()=>{
- const r=await createTradingReadiness({env,runner:runner({trade:true,cash:'25.000000000000000000'})})();assert.equal(r.canTrade,true);assert.equal(r.spendableUsd,'25.000000000000000000');assert.equal(r.ordersEnabled,false);assert.equal(r.stockApproval,'not_verified');assert.ok(r.blockers.some(b=>b.code==='engine_not_installed'));assert.ok(!r.blockers.some(b=>['no_usd','below_budget'].includes(b.code)));
+test('even trade grant and USD do not prove stock eligibility or activate an engine',async()=>{
+ const r=await createTradingReadiness({env,runner:runner({trade:true,cash:'25.000000000000000000'})})();assert.equal(r.canTrade,true);assert.equal(r.spendableUsd,'25.000000000000000000');assert.equal(r.ordersEnabled,false);assert.equal(r.stockApproval,'not_verified');assert.ok(r.blockers.some(b=>b.code==='strategy_review_required'));assert.ok(!r.blockers.some(b=>['no_usd','below_budget'].includes(b.code)));
 });
 test('unknown permission, incomplete pagination, mismatched account and missing money fail closed',async()=>{
  for(const run of [runner({failPermission:true}),runner({hasNext:true}),runner({cash:null}),async a=>a[0]==='portfolios'?{portfolios:[{uuid:id}]}:a[0]==='api-key'?{portfolio_uuid:other,can_view:true,can_trade:true}:{portfolio_id:other,accounts:[],has_next:false}]){

@@ -2,7 +2,14 @@ import http from 'node:http';
 import {createCoinbaseReader} from './coinbase-reader.js';
 import {savingsStatus, savingsIllustration} from './savings-rule.js';
 import {createTradingReadiness} from './trading-readiness.js';
+import {TradingEngine, PLAN, units} from './trading-engine.js';
+import {createEngineStore} from './engine-store.js';
+import {createExecutionBroker} from './coinbase-execution.js';
 let tradingReadiness;
+let tradingEngine,workerBusy=false;
+const workerSignatures=new Map();
+const engine=()=>tradingEngine ||= new TradingEngine({store:createEngineStore(storageConfig),broker:createExecutionBroker(),feed:monitorFeed});
+function ownerOrigin(req){return req.headers.origin===(process.env.RENDER?'https://ai-stock-income-tracker-a.onrender.com':'http://'+req.headers.host);}
 let coinbaseStatus;
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -694,6 +701,18 @@ const server=http.createServer(async(req,res)=>{
    return send(res,200,{ok:true});
   }
 
+  if(url.pathname==='/api/trading/tick'&&req.method==='POST'){
+   const secret=process.env.COINBASE_WORKER_TOKEN||'',stamp=String(req.headers['x-stock-worker-time']||''),given=String(req.headers['x-stock-worker-signature']||'');
+   const seconds=Number(stamp),nowSeconds=Math.floor(Date.now()/1000);
+   if(secret.length<32||!/^\d{10}$/.test(stamp)||!/^([a-f0-9]{64})$/.test(given)||seconds>nowSeconds+5||nowSeconds-seconds>90)return send(res,401,{error:'Worker authorization required'});
+   const expected=crypto.createHmac('sha256',secret).update(stamp).digest('hex');
+   if(!crypto.timingSafeEqual(Buffer.from(expected,'hex'),Buffer.from(given,'hex')))return send(res,401,{error:'Worker authorization required'});
+   for(const [key,time]of workerSignatures)if(nowSeconds-time>120)workerSignatures.delete(key);
+   if(workerSignatures.has(given))return send(res,202,{status:'duplicate_worker_request'});
+   workerSignatures.set(given,seconds);
+   if(workerBusy)return send(res,202,{status:'busy'});
+   workerBusy=true;try{return send(res,200,{status:await engine().tick()});}catch{return send(res,503,{error:'Trading worker stopped; account or ledger verification is required'});}finally{workerBusy=false;}
+  }
   const active=session(req);
   if(!active){
    if(url.pathname.startsWith('/api/')){
@@ -736,15 +755,40 @@ const server=http.createServer(async(req,res)=>{
    }
 
    if(url.pathname==='/api/savings'&&req.method==='GET'){
+    try{
+     const {data}=await engine().status();
+     if(data.portfolioId){const n=BigInt(data.reserveCents);return send(res,200,{...savingsStatus(),reserve:`${n/100n}.${String(n%100n).padStart(2,'0')}`,liveAllocationEnabled:data.mode==='active',automaticTrading:data.mode==='active',message:'This is the bot’s bookkeeping reserve. It has not been transferred to a bank or PayPal. Unsettled proceeds remain pending; no withdrawal amount is verified.'});}
+    }catch{}
     return send(res,200,savingsStatus());
    }
 
    if(url.pathname==='/api/trading/readiness'&&req.method==='GET'){
-    return send(res,200,await (tradingReadiness ||= createTradingReadiness())());
+    const result=structuredClone(await (tradingReadiness ||= createTradingReadiness())());
+    try{const {data}=await engine().status();result.automaticTrading=data.mode==='active';result.ordersEnabled=data.mode==='active';
+     if(data.approval?.version===PLAN.version){result.blockers=result.blockers.filter(x=>x.code!=='strategy_review_required');result.stockApproval='owner_confirmed_not_broker_verified';}
+     if(data.portfolioId&&typeof result.spendableUsd==='string'&&units(result.spendableUsd)>=(BigInt(data.cashCents)+BigInt(data.reserveCents))*10n**16n)result.blockers=result.blockers.filter(x=>x.code!=='below_budget');
+    }catch{result.blockers.push({code:'ledger_unavailable',message:'The durable trading ledger could not be verified. Start remains blocked.'});}
+    return send(res,200,result);
    }
 
    if(url.pathname==='/api/trading/start'&&req.method==='POST'){
-    return send(res,409,{error:'Automatic trading is not installed or ready. No orders were enabled.',automaticTrading:false});
+    if(!ownerOrigin(req))return send(res,403,{error:'Same-origin owner action required'});
+    if(!process.env.COINBASE_WORKER_TOKEN||process.env.COINBASE_WORKER_TOKEN.length<32)return send(res,409,{error:'The trading scheduler is not configured',automaticTrading:false});
+    try{return send(res,200,{state:await engine().start(await body(req,4096))});}
+    catch{return send(res,409,{error:'Could not start: review the plan, verify the selected stock account and Trade permission, available USD, and durable ledger. No new orders were sent by this action.',automaticTrading:false});}
+   }
+   if(url.pathname==='/api/trading/pause'&&req.method==='POST'){
+    if(!ownerOrigin(req))return send(res,403,{error:'Same-origin owner action required'});
+    return send(res,200,{state:await engine().pause()});
+   }
+   if(url.pathname==='/api/trading/settlement'&&req.method==='POST'){
+    if(!ownerOrigin(req))return send(res,403,{error:'Same-origin owner action required'});
+    try{return send(res,200,{state:await engine().confirmSettlement(await body(req,4096))});}
+    catch{return send(res,409,{error:'Settlement confirmation failed. Verify the exact sale proceeds in Coinbase and refresh the ledger.'});}
+   }
+   if(url.pathname==='/api/trading/engine'&&req.method==='GET'){
+    try{const row=await engine().status();const {portfolioId,...safe}=row.data;return send(res,200,{installed:true,ledgerReady:true,schedulerConfigured:!!process.env.COINBASE_WORKER_TOKEN,funded:!!portfolioId,plan:PLAN,state:safe});}
+    catch{return send(res,503,{error:'The durable trading ledger is unavailable. Trading cannot start.',installed:true,ledgerReady:false,plan:PLAN});}
    }
 
    // Arithmetic illustration only: no account reads, ledger writes or transfers.

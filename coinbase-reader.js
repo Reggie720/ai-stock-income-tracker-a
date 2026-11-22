@@ -27,6 +27,11 @@ export async function runCoinbaseRead(args,cfg){
   (args[0]==='balance'&&args.length>=3&&args.length<=4&&/^portfolio_id==[a-f0-9-]{36}$/i.test(args[1])&&args[2]==='show_zero==true'&&
    (args.length===3||/^cursor==[A-Za-z0-9_=.-]{1,1024}$/.test(args[3])));
  if(!fixed)throw Error('Unsupported read command');
+ return executeCoinbaseCommand(args,cfg);
+}
+// Internal transport: only server-owned adapters construct commands. Never expose
+// this function, credentials, arbitrary fields or raw provider errors over HTTP.
+export async function executeCoinbaseCommand(args,cfg){
  const cli=path.join(path.dirname(require.resolve('@coinbase/coinbase-cli/package.json')),'dist','index.js');
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'tracker-coinbase-read-'));
  try{

@@ -5,7 +5,7 @@ export const savingsPolicy = Object.freeze({
   currency: 'USD', threshold: '200.00', comparison: 'strictly_above',
   percentage: 50, basis: 'bot_trading_balance_excluding_existing_savings',
   funding: 'unreserved_settled_usd_only', automaticWithdrawals: false,
-  activation: 'waiting_for_verified_trading_ledger'
+  activation: 'awaiting_approved_trading_and_settled_cash'
 });
 export function parseUsd(value) {
   if (typeof value !== 'string' || !/^(0|[1-9]\d{0,12})(\.\d{1,2})?$/.test(value)) throw Error('Enter a nonnegative dollar amount with at most two decimals');
@@ -22,7 +22,7 @@ export function savingsIllustration(balance) {
 export function savingsStatus() {
   return {policy: savingsPolicy, reserve: null, withdrawable: null, liveAllocationEnabled: false,
     automaticTrading: false, transfersEnabled: false,
-    message: 'Rule prepared. Automatic savings is waiting for a verified bot trading ledger and settled USD. No money has been set aside or transferred.'};
+    message: 'Rule prepared. Allocation starts only after approved trading is enabled and enough settled bot cash is verified. No money has been set aside or transferred.'};
 }
 export function emptySavingsLedger(portfolioId) {
   if (typeof portfolioId !== 'string' || !/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(portfolioId)) throw Error('An explicit Coinbase portfolio is required');
