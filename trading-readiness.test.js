@@ -9,7 +9,7 @@ function runner({trade=false,cash='0',failPermission=false,hasNext=false}={}){re
  return {portfolio_id:id,has_next:hasNext,cursor:hasNext?'repeat':null,accounts:[{currency:'USD',ready:true,active:true,available_balance:{currency:'USD',value:cash}}]};
 };}
 test('read-only key and zero USD are distinct verified blockers; user terms recorded; no engine activation',async()=>{
- const r=await createTradingReadiness({env,runner:runner()})();assert.equal(r.canTrade,false);assert.equal(r.spendableUsd,'0');assert.equal(r.terms.stopNewBuysAtLoss,'10.00');assert.equal(r.terms.totalBudget,'25.00');assert.equal(r.engineInstalled,true);assert.equal(r.ordersEnabled,false);assert.equal(r.automaticTrading,false);
+ const r=await createTradingReadiness({env,runner:runner()})();assert.equal(r.canTrade,false);assert.equal(r.spendableUsd,'0');assert.equal(r.terms.stopNewBuysAtLoss,'10.00');assert.equal(r.terms.totalBudget,'5.00');assert.equal(r.engineInstalled,true);assert.equal(r.ordersEnabled,false);assert.equal(r.automaticTrading,false);
  for(const c of ['trade_permission','no_usd','strategy_review_required'])assert.ok(r.blockers.some(b=>b.code===c));
  assert.doesNotMatch(JSON.stringify(r),new RegExp(id+'|fictional-secret'));
 });
@@ -29,4 +29,8 @@ test('same cached credential check uses only fixed reads and coalesces concurren
 });
 test('production read runner rejects every financial or arbitrary command before credentials are used',async()=>{
  for(const a of [['orders','create'],['transfer'],['balance'],['portfolios','get','bad','currency==USD'],['api-key','permissions','extra'],['balance',`portfolio_id==${id}`,'show_zero==true','cursor==bad;command']])await assert.rejects(runCoinbaseRead(a,{}),/Unsupported read/);
+});
+
+test('five dollars clears funding check while 4.99 is below budget',async()=>{
+ for(const cash of ['4.99','5.00']){const r=await createTradingReadiness({env,runner:runner({trade:true,cash})})();assert.equal(r.blockers.some(b=>b.code==='below_budget'),cash==='4.99');}
 });

@@ -1,8 +1,8 @@
 import {randomUUID,createHash} from 'node:crypto';
 const SCALE=10n**18n;
-export const PLAN_VERSION='stock-pattern-v1';
+export const PLAN_VERSION='stock-pattern-v2-budget5';
 export const portfolioBinding=id=>createHash('sha256').update('stock-tracker:'+id).digest('hex');
-export const PLAN=Object.freeze({version:PLAN_VERSION,currency:'USD',budget:'25.00',lossStop:'10.00',buyAmount:'1.00',
+export const PLAN=Object.freeze({version:PLAN_VERSION,currency:'USD',budget:'5.00',lossStop:'10.00',buyAmount:'1.00',
  products:['SGOV-USD','JEPI-USD','DIVO-USD','O-USD'],takeProfitPercent:5,positionExitLossPercent:5,
  entry:'Existing fresh one-hour upward-pattern signal; one buy attempt per symbol per New York trading day.',
  exit:'Sell only shares bought by this bot when the sampled position value rises 5% or falls 5% from cost.',
@@ -19,7 +19,7 @@ export function emptyEngine(){return {schema:1,mode:'off',approval:null,portfoli
 export function validateEngine(s){
  if(!s||s.schema!==1||!['off','active','paused'].includes(s.mode)||!Array.isArray(s.history)||!Array.isArray(s.attempts)||!Array.isArray(s.unsettled)||!s.positions||typeof s.positions!=='object')throw Error('Invalid engine ledger');
  for(const k of ['cashCents','spentCents','reserveCents'])money(s[k]);
- if(money(s.spentCents)>2500n)throw Error('Spending cap exceeded');
+ if(money(s.spentCents)>500n)throw Error('Spending cap exceeded');
  for(const [p,v]of Object.entries(s.positions)){if(!PLAN.products.includes(p)||units(v.quantity)<0n||money(v.costCents)<0n)throw Error('Invalid bot position');}
  if(s.pending&&(!PLAN.products.includes(s.pending.productId)||!['BUY','SELL'].includes(s.pending.side)||!['reserved','submitting','submitted','unknown'].includes(s.pending.phase)))throw Error('Invalid pending order');
  return s;
@@ -56,7 +56,7 @@ export function decideOrder(s,feed,now){
   const value=cents(units(v.quantity)*q.price/SCALE),cost=money(v.costCents);equity+=value;
   if(value*100n>=cost*105n||value*100n<=cost*95n)return {productId:p,side:'SELL',quantity:v.quantity,signalQuoteAt:q.quoteAt,reason:value>=cost?'take_profit_5_percent':'position_exit_loss_5_percent'};
  }
- if(s.buyPaused===true||equity<=1500n||money(s.spentCents)+100n>2500n||money(s.cashCents)<100n)return null;
+ if(s.buyPaused===true||equity<=(units(PLAN.budget)-units(PLAN.lossStop))/(SCALE/100n)||money(s.spentCents)+100n>500n||money(s.cashCents)<100n)return null;
  for(const p of selected){
   const q=stock(feed,p,now),key=`${session(now).day}:${p}`;
   if(!q||q.pattern?.qualifies!==true||s.positions[p]||s.attempts.includes(key))continue;
@@ -72,7 +72,7 @@ export function reconcileOrder(s,order,now){
  const principal=filled*price/SCALE,charge=cents(principal+fees),proceeds=principal>=fees?(principal-fees)/(SCALE/100n):0n;
  const next=copy(s),prior=next.positions[p.productId];
  if(p.side==='BUY'){
-  if(charge>money(p.quoteCents)||money(s.spentCents)+charge>2500n||charge>money(s.cashCents))throw Error('Actual order cost exceeds reservation; reconciliation requires review');
+  if(charge>money(p.quoteCents)||money(s.spentCents)+charge>500n||charge>money(s.cashCents))throw Error('Actual order cost exceeds reservation; reconciliation requires review');
   next.cashCents=String(money(s.cashCents)-charge);next.spentCents=String(money(s.spentCents)+charge);
   if(filled>0n)next.positions[p.productId]={quantity:decimal((prior?units(prior.quantity):0n)+filled),costCents:String((prior?money(prior.costCents):0n)+charge)};
  }else{
@@ -94,12 +94,12 @@ export class TradingEngine{
  async start(approval){
   if(approval?.version!==PLAN_VERSION||approval.equityAccountConfirmed!==true||approval.settledFundsConfirmed!==true||approval.marketOrderAccepted!==true||approval.accepted!==true||!Array.isArray(approval.products)||!approval.products.length||approval.products.some(p=>!PLAN.products.includes(p)))throw Error('Review and accept the exact trading plan');
   const row=await this.status(),s=row.data;
-  const needed=s.portfolioId?(money(s.cashCents)+money(s.reserveCents))*(SCALE/100n):25n*SCALE;
-  const account=await this.broker.account();if(!account.canTrade||!account.portfolioId||units(account.spendableUsd)<needed)throw Error('Verified Trade permission and sufficient spendable USD are required ($25 on first start)');
+  const needed=s.portfolioId?(money(s.cashCents)+money(s.reserveCents))*(SCALE/100n):units(PLAN.budget);
+  const account=await this.broker.account();if(!account.canTrade||!account.portfolioId||units(account.spendableUsd)<needed)throw Error('Verified Trade permission and sufficient spendable USD are required ($5 on first start)');
   if(approval.portfolioBinding!==portfolioBinding(account.portfolioId))throw Error('The reviewed portfolio changed');
   if(Object.keys(s.positions).some(p=>!approval.products.includes(p)))throw Error('An existing bot position needs its approved exit scope retained');
   if(s.pending)throw Error('Reconcile the pending order before starting');if(s.portfolioId&&s.portfolioId!==account.portfolioId)throw Error('The selected portfolio changed');
-  const next=copy(s);next.approval={version:PLAN_VERSION,portfolioBinding:approval.portfolioBinding,products:[...new Set(approval.products)],at:new Date(this.now()).toISOString(),equityAccountConfirmed:true,settledFundsConfirmed:true,marketOrderAccepted:true};next.mode='active';next.portfolioId=account.portfolioId;if(!s.portfolioId)next.cashCents='2500';next.reason='Active; waiting for a qualified signal. No order is guaranteed.';
+  const next=copy(s);next.approval={version:PLAN_VERSION,portfolioBinding:approval.portfolioBinding,products:[...new Set(approval.products)],at:new Date(this.now()).toISOString(),equityAccountConfirmed:true,settledFundsConfirmed:true,marketOrderAccepted:true};next.mode='active';next.portfolioId=account.portfolioId;if(!s.portfolioId)next.cashCents='500';next.reason='Active; waiting for a qualified signal. No order is guaranteed.';
   if(!await this.store.cas(row.version,next))throw Error('State changed; refresh before starting');return next;
  }
  async confirmSettlement(input){
@@ -125,7 +125,7 @@ export class TradingEngine{
   if(s.mode!=='active')return 'off';
   if(!s.pending){
    const feed=await this.feed(),equity=markEquity(s,feed,now);
-   if(equity!==null&&equity<=1500n&&s.buyPaused!==true){await this.store.cas(row.version,{...s,buyPaused:true,reason:'$10 loss threshold reached. New buys are stopped; existing exit rules remain enabled.'});return 'loss_stop';}
+   if(equity!==null&&equity<=(units(PLAN.budget)-units(PLAN.lossStop))/(SCALE/100n)&&s.buyPaused!==true){await this.store.cas(row.version,{...s,buyPaused:true,reason:'$10 loss threshold reached. New buys are stopped; existing exit rules remain enabled.'});return 'loss_stop';}
    const trading=equity===null?null:equity-money(s.reserveCents);
    if(trading!==null&&trading<=20000n&&s.savingsArmed===false){await this.store.cas(row.version,{...s,savingsArmed:true});return 'savings_rearmed';}
    if(trading!==null&&trading>20000n&&s.savingsArmed!==false&&money(s.cashCents)>=trading/2n){
@@ -143,7 +143,7 @@ export class TradingEngine{
   // Recheck signal freshness and exit terms immediately before submitting.
   const decision=decideOrder({...s,pending:null,attempts:s.attempts.filter(x=>x!==s.pending.attemptKey)},await this.feed(),now);
   if(!decision||decision.productId!==s.pending.productId||decision.side!==s.pending.side){await this.store.cas(row.version,{...s,pending:null,reason:'Signal expired before submission.'});return 'expired';}
-  if(s.pending.side==='BUY'&&(units(account.spendableUsd)<SCALE+money(s.reserveCents)*(SCALE/100n)||money(s.cashCents)<100n||money(s.spentCents)+100n>2500n))return 'insufficient_funds';
+  if(s.pending.side==='BUY'&&(units(account.spendableUsd)<SCALE+money(s.reserveCents)*(SCALE/100n)||money(s.cashCents)<100n||money(s.spentCents)+100n>500n))return 'insufficient_funds';
   const next=copy(s);next.pending.phase='submitting';next.pending.sentAt=now;next.pending.signalQuoteAt=decision.signalQuoteAt;
   if(!await this.store.cas(row.version,next))return 'concurrent_worker';
   try{

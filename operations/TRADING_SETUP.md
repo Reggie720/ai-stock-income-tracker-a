@@ -1,10 +1,10 @@
 # Bounded Coinbase stock engine — OFF by default
 
-The owner selected a $25 cumulative buying cap including fees, a $10 loss threshold that stops new buys, and a 50% savings reserve strictly above $200. Start/Pause, execution and persistence are implemented in this release. No real trade has been placed for verification, and no owner trading plan has been activated.
+The owner selected a $5 cumulative buying cap including fees, a $10 loss threshold that stops new buys, and a 50% savings reserve strictly above $200. Start/Pause, execution and persistence are implemented in this release. No real trade has been placed for verification, and no owner trading plan has been activated.
 
 ## Reviewable proposal
 
-`stock-pattern-v1`: choose from SGOV-USD, JEPI-USD, DIVO-USD and O-USD; buy $1 on the existing fresh hourly upward-pattern signal, one attempt per product per New York trading day and one bot position per product. Sell the bot-tracked quantity at a sampled 5% gain or loss from recorded cost. The $10 account loss threshold latches new buys off; ordinary exits remain eligible unless the owner pauses the engine. Pausing stops new submissions, not orders already in flight. Sale proceeds do not reset the cumulative $25 buying cap. The owner must accept the specific scope, approved-stock-account assertion, initial settled USD and market-order execution risk in the app before Start.
+`stock-pattern-v2-budget5`: choose from SGOV-USD, JEPI-USD, DIVO-USD and O-USD; buy $1 on the existing fresh hourly upward-pattern signal, one attempt per product per New York trading day and one bot position per product. Sell the bot-tracked quantity at a sampled 5% gain or loss from recorded cost. The $10 account loss threshold latches new buys off; ordinary exits remain eligible unless the owner pauses the engine. Pausing stops new submissions, not orders already in flight. Sale proceeds do not reset the cumulative $5 buying cap. The owner must accept the specific scope, approved-stock-account assertion, initial settled USD and market-order execution risk in the app before Start.
 
 These entry/exit parameters are a proposed rule, not an owner approval or a demonstrated profitable strategy. The existing monitor can evaluate its bounded price filter, but this engine does not retrain an AI or raise its own limits. Never label simulation tests as proven investment returns.
 
