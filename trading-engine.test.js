@@ -97,3 +97,13 @@ test('two dollar funding boundary, old consent rejection and cap after proceeds'
  s.spentCents='200';assert.equal(decideOrder(s,feed(),now),null);s.pending={side:'BUY',productId:'JEPI-USD',quoteCents:'100',phase:'submitted',orderId:'over-cap',clientOrderId:client};
  assert.throws(()=>reconcileOrder(s,{side:'BUY',product_id:'JEPI-USD',order_id:'over-cap',status:'FILLED',filled_size:'0.02',average_filled_price:'50',total_fees:'0'},now),/exceeds/);
 });
+
+test('fee verifier retries transient failures, ignores script claims and does not cache a failed proof',async()=>{
+ const terms='CCM does not charge commission or fees for stock trades in your CCM brokerage account. We do not currently charge regulatory fees.';
+ let n=0;const retry=createFeeScheduleVerifier({request:async()=>++n===1?{ok:false,status:503}:{ok:true,status:200,text:async()=>terms}});
+ assert.equal(await retry(),true);assert.equal(n,2);
+ let body='<script>'+terms+'</script>fees changed';n=0;
+ const safe=createFeeScheduleVerifier({request:async()=>{n++;return {ok:true,status:200,text:async()=>body};}});
+ assert.equal(await safe(),false);assert.equal(n,1);body=terms;assert.equal(await safe(),true);assert.equal(n,2);
+ const unavailable=createFeeScheduleVerifier({request:async()=>{throw new Error('unavailable');}});assert.equal(await unavailable(),false);assert.equal((await unavailable.inspect()).reason,'source_request_failed');
+});

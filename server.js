@@ -4,11 +4,12 @@ import {savingsStatus, savingsIllustration} from './savings-rule.js';
 import {createTradingReadiness} from './trading-readiness.js';
 import {TradingEngine, PLAN, units} from './trading-engine.js';
 import {createEngineStore} from './engine-store.js';
-import {createExecutionBroker} from './coinbase-execution.js';
+import {createExecutionBroker,createFeeScheduleVerifier} from './coinbase-execution.js';
+const verifyStockFees=createFeeScheduleVerifier();
 let tradingReadiness;
 let tradingEngine,workerBusy=false;
 const workerSignatures=new Map();
-const engine=()=>tradingEngine ||= new TradingEngine({store:createEngineStore(storageConfig),broker:createExecutionBroker(),feed:monitorFeed});
+const engine=()=>tradingEngine ||= new TradingEngine({store:createEngineStore(storageConfig),broker:createExecutionBroker({verifyFeeSchedule:verifyStockFees}),feed:monitorFeed});
 function ownerOrigin(req){return req.headers.origin===(process.env.RENDER?'https://ai-stock-income-tracker-a.onrender.com':'http://'+req.headers.host);}
 let coinbaseStatus;
 import fs from 'node:fs/promises';
@@ -710,6 +711,7 @@ const server=http.createServer(async(req,res)=>{
    for(const [key,time]of workerSignatures)if(nowSeconds-time>120)workerSignatures.delete(key);
    if(workerSignatures.has(given))return send(res,202,{status:'duplicate_worker_request'});
    workerSignatures.set(given,seconds);
+   if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
    if(workerBusy)return send(res,202,{status:'busy'});
    workerBusy=true;try{return send(res,200,{status:await engine().tick()});}catch{return send(res,503,{error:'Trading worker stopped; account or ledger verification is required'});}finally{workerBusy=false;}
   }
