@@ -1,6 +1,6 @@
 # Bounded Coinbase stock engine — OFF by default
 
-The owner selected a $2 cumulative buying cap including fees, a $10 loss threshold that stops new buys, and a 50% savings reserve strictly above $200. Start/Pause, execution and persistence are implemented in this release. No real trade has been placed for verification, and no owner trading plan has been activated.
+The owner selected a $2 cumulative buying cap including fees, a $10 loss threshold that stops new buys, and a 50% savings reserve strictly above $200. Start/Pause, execution and persistence are implemented in this release. No real trade has been placed as a test. The owner has activated the bounded plan and separately authorized the queued one-time purchase.
 
 ## Reviewable proposal
 
@@ -67,3 +67,5 @@ The tracker key passed fresh account/Trade, USD, public fee schedule, account fe
 The owner explicitly requested one $1 purchase and delegated selection among the approved four stocks. O-USD was selected using the strongest gain in the last available roughly one-hour sample (58.52 to 58.63, about 0.19%), not a forecast. The entry is queued for November 24, 2026, in the original 10:00–15:30 New York window. It bypasses only the price-pattern entry requirement for one reservation on that date; fresh quote, scoped account, fees, available USD, lifetime $2 cap, one daily attempt, bot-only holdings and existing exit rules remain enforced.
 
 The schedule operation requires a second HMAC binding timestamp, action, product, date and authorization ID; the ordinary timestamp-only worker signature cannot schedule or alter an entry. Scheduling creates no financial order. Its reservation is consumed once, including failed/unknown attempts, with no automatic replacement. A scheduled entry is displayed in the order ledger. The approved recurring strategy remains unchanged for any remaining cap.
+
+The signed Learning & research worker can now supply a validated ranking to order approved signal-qualified candidates. See LEARNING_RESEARCH.md. It does not change order sizes, budgets, triggers or the scheduled entry.

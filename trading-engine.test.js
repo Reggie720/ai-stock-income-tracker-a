@@ -180,3 +180,10 @@ test('scheduled entry respects pause, approved scope, holidays, expiry and funds
  const s=r.db.peek().data,f=feed();f.updatedAt='2026-11-25T16:00:00Z';f.stocks[0].quoteAt=f.updatedAt;f.stocks[0].pattern.qualifies=false;
  assert.equal(decideOrder(s,f,Date.parse(f.updatedAt)),null);assert.equal(decideOrder({...s,mode:'paused'},f,Date.parse(f.updatedAt)),null);
 });
+
+test('learned ranking only reorders approved qualified stocks and never overrides scheduled entry or cap',async()=>{
+ const r=rig();await r.engine.start(approval);let s=r.db.peek().data;s.approval.products=['JEPI-USD','O-USD'];const f=feed();f.stocks.push({...f.stocks[0],symbol:'O'});f.learnedRanking=[{symbol:'O',probability:.8,version:1},{symbol:'BTC',probability:1,version:1}];
+ assert.equal(decideOrder(s,f,now).productId,'O-USD');f.stocks[1].pattern={qualifies:false};assert.equal(decideOrder(s,f,now).productId,'JEPI-USD');
+ assert.equal(decideOrder({...s,spentCents:'200'},f,now),null);
+ s.scheduledEntry={id:'owner-test-entry',productId:'O-USD',quoteCents:'100',status:'queued',day:'2026-11-23'};f.learnedRanking=[{symbol:'JEPI',probability:1,version:2},{symbol:'O',probability:.1,version:2}];assert.equal(decideOrder(s,f,now).productId,'O-USD');
+});

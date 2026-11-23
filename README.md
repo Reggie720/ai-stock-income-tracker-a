@@ -1,3 +1,9 @@
+# Learning & research release
+
+The authenticated Learning & research screen at `/#learning` adds prospective forecast memory, later-quote scoring, chronological candidate validation, forward monitoring/rollback, sourced daily AI research, actual-fill summaries and a downloadable memory export. A separate signed weekday scheduler runs this work automatically. Validated learned ranking only reorders approved signal-qualified stocks; the $2 cap and queued one-time $1 O entry remain unchanged. Evidence must accumulate before a learned ranking can activate. This is bounded empirical learning plus sourced language-model interpretation, not human understanding or a guarantee of profit.
+
+See [learning workflow and verification](operations/LEARNING_RESEARCH.md).
+
 # Current automatic-trading release
 
 The tracker now includes a bounded Coinbase stock-order engine, durable signed order ledger, weekday scheduler, and owner-reviewed Start/Pause controls at `/#trading`. It stays OFF until the selected key has View + Trade, the owner confirms the stock account and settled USD, and accepts the exact proposed plan. The selected limits are $2 cumulative buys including fees and $10 stopping new buys. Savings reserves half the bot balance strictly above $200 only when enough verified cash is available; no external withdrawal or transfer is implemented.

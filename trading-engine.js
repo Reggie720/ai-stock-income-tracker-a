@@ -49,8 +49,10 @@ export function markEquity(s,feed,now){
 }
 export function decideOrder(s,feed,now){
  validateEngine(s);if(s.mode!=='active'||s.pending||!s.approval||s.approval.version!==PLAN_VERSION||!session(now).open||feed?.monitor?.enabled!==true)return null;
- const selected=s.approval.products;
+ const selected=[...s.approval.products];
  if(!Array.isArray(selected)||!selected.length||selected.some(p=>!PLAN.products.includes(p)))throw Error('Invalid approved scope');
+ const ranking=Array.isArray(feed.learnedRanking)?feed.learnedRanking.filter(x=>selected.includes(x.symbol+'-USD')&&Number.isInteger(x.version)&&x.version>0&&typeof x.probability==='number'&&x.probability>=0&&x.probability<=1):[];
+ const priority=p=>ranking.find(x=>x.symbol+'-USD'===p)?.probability??-1;selected.sort((a,b)=>priority(b)-priority(a));
  let equity=money(s.cashCents)+money(s.reserveCents)+s.unsettled.reduce((n,x)=>n+money(x.cents),0n);
  for(const [p,v]of Object.entries(s.positions)){
   const q=stock(feed,p,now);if(!q)return null;
