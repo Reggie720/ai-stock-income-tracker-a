@@ -100,14 +100,14 @@ export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,
   async export(){const row=await store.read();const {lease,...data}=row.data;return {exportedAt:new Date(now()).toISOString(),format:'stock-tracker-learning-v1',data};},
   async read(){const row=await store.read();let f=null;try{f=await feed();}catch{}return labView(row.data,f,now(),f?.learning||null);},
   async ranking(f){try{const row=await store.read();return learnedRanking(row.data,f,now());}catch{return [];}},
-  async tick(){
+  async tick({refreshResearch=false}={}){
    const time=now(),row=await store.read();validateLab(row.data);if(row.data.lease?.until>time)return {status:'busy'};
    const token=id(),claimed={...row.data,lease:{token,until:time+110000}};if(!await store.cas(row.version,claimed))return {status:'busy'};
    let f=null;try{f=await feed();}catch{}
    let next=advanceLab(claimed,f,time);
    try{const t=await tradeStatus();next.tradeResults=botResults(t.history);}catch{next.tradeResults={unavailable:true};}
    const day=session(time).day,attempts=next.researchAttempts.filter(x=>x.day===day),last=attempts.at(-1);
-   if(research&&(!last||!next.reports.some(r=>r.day===day&&r.aiStatus==='ready')&&attempts.length<3&&time-Date.parse(last.at)>=60*MINUTE)){
+   if(research&&(!last||attempts.length<3&&((refreshResearch&&time-Date.parse(last.at)>=MINUTE)||(!next.reports.some(r=>r.day===day&&r.aiStatus==='ready')&&time-Date.parse(last.at)>=60*MINUTE)))){
     next.researchAttempts.push({day,at:new Date(time).toISOString()});next.researchAttempts=next.researchAttempts.slice(-90);
     try{const report=await research({feed:f,memory:labView(next,f,time,f?.learning||null),day,now:time});next.reports=next.reports.filter(r=>r.day!==day);next.reports.push(report);next.reports=next.reports.slice(-30);}catch{next.reports=next.reports.filter(r=>r.day!==day);next.reports.push({day,at:new Date(time).toISOString(),aiStatus:'unavailable',message:'Research provider unavailable; no facts or forecast fabricated.'});}
    }

@@ -718,7 +718,7 @@ const server=http.createServer(async(req,res)=>{
    for(const [key,time]of workerSignatures)if(nowSeconds-time>120)workerSignatures.delete(key);
    if(workerSignatures.has(given))return send(res,202,{status:'duplicate_worker_request'});
    workerSignatures.set(given,seconds);
-   if(url.pathname==='/api/learning/tick'){if(learningBusy)return send(res,202,{status:'busy'});learningBusy=true;try{return send(res,200,await learning().tick());}catch{return send(res,503,{error:'Learning memory or source unavailable; financial state unchanged'});}finally{learningBusy=false;}}
+   if(url.pathname==='/api/learning/tick'){if(learningBusy)return send(res,202,{status:'busy'});learningBusy=true;try{return send(res,200,await learning().tick({refreshResearch:url.searchParams.get('refresh')==='research'}));}catch{return send(res,503,{error:'Learning memory or source unavailable; financial state unchanged'});}finally{learningBusy=false;}}
    if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
    if(url.searchParams.get('check')==='execution'){const row=await engine().status();if(!row.data.portfolioId||!row.data.approval)return send(res,409,{error:'No approved plan'});return send(res,200,{executionAudit:await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).audit(row.data.portfolioId,row.data.approval.products)});}
    if(url.searchParams.get('schedule')==='one-dollar'){

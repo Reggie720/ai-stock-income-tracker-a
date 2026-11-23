@@ -50,7 +50,7 @@ test('realized trade results use actual fill amounts and exclude paper/forecast 
 });
 test('AI interpretation rejects invented source IDs and unsafe source URLs',()=>{
  assert.equal(safeSourceUrl('javascript:alert(1)'),null);assert.equal(safeSourceUrl('https://user:pass@example.com'),null);
- const note={summary:'Evidence is limited.',stocks:[{symbol:'O',assessment:'Needs more observations.',evidenceIds:['O-quote'],risks:['Loss'],unknowns:['Future price']}]};assert.ok(validateResearchNote(note,[{id:'O-quote'}]));assert.throws(()=>validateResearchNote(note,[]));assert.throws(()=>validateResearchNote({...note,summary:'https://invented.invalid'},[{id:'O-quote'}]));
+ const note={summary:'Evidence is limited.',stocks:['SGOV','JEPI','DIVO','O'].map(symbol=>({symbol,assessment:'Needs more observations.',evidenceIds:['memory'],risks:['Loss'],unknowns:['Future price']}))};assert.ok(validateResearchNote(note,[{id:'memory'}]));assert.throws(()=>validateResearchNote(note,[]));assert.throws(()=>validateResearchNote({...note,summary:'https://invented.invalid'},[{id:'O-quote'}]));
 });
 test('research separates stale quotes, unavailable profiles, news facts and AI interpretation',async()=>{
  const calls=[];const collector=createResearchCollector({env:{FINNHUB_API_KEY:'fictional-key'},request:async(url,opts)=>{calls.push({url,opts});return {ok:true,json:async()=>url.includes('company-news')?[]:{}};}});
