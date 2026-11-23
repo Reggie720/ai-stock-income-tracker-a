@@ -60,3 +60,12 @@ test('signed learning memory rejects tampering and version replay',async()=>{
  let row={version:0,data:emptyLab()};const request=async(url,o)=>{if(url.includes('/rpc/')){const b=JSON.parse(o.body);if(b.expected!==row.version)return {ok:true,json:async()=>false};row={version:row.version+1,data:b.next_data};return {ok:true,json:async()=>true};}return {ok:true,json:async()=>[structuredClone(row)]};};
  const db=createLearningStore(()=>({url:'https://example.test/rest/v1/stock_tracker_state',key:'test'}),{request,key:()=> 'fictional-signing-key-only-for-tests-12345'});const s=await db.read();assert.equal(await db.cas(s.version,s.data),true);await db.read();row.data.status='tampered';await assert.rejects(db.read(),/integrity/);
 });
+
+
+test('research rejects headlines about unrelated funds and matches Realty Income by name',async()=>{
+ const {relevantHeadline}=await import('./learning-research.js');
+ assert.equal(relevantHeadline('JEPI','Lazard’s New ETF Targets Monthly Income With Junk Bonds'),false);
+ assert.equal(relevantHeadline('JEPI','Forget JEPI: 4 Dividend Stocks'),true);
+ assert.equal(relevantHeadline('O','Better Dividend Stock: Realty Income vs. Iron Mountain'),true);
+ assert.equal(relevantHeadline('O','Stocks climb on outlook'),false);
+});
