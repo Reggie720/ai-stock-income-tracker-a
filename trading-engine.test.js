@@ -142,3 +142,21 @@ test('position preflight repair rechecks actual broker shape before resuming ori
  r.broker.verifyPositions=async()=>false;assert.equal(await r.engine.recoverFeePause(async()=>true),'positions_unverified');assert.equal(r.db.peek().data.mode,'paused');
  r.broker.verifyPositions=async pid=>{assert.equal(pid,id);return true;};assert.equal(await r.engine.recoverFeePause(async()=>true),'approved_plan_resumed');assert.equal(r.calls.length,0);
 });
+
+test('execution audit checks current scoped data without any financial command',async()=>{
+ const r=executionFixture();const result=await r.broker.audit(id,['JEPI-USD']);assert.equal(result.ordersSubmitted,0);assert.equal(result.readOnly,true);assert.ok(result.checks.length>=6);assert.ok(result.checks.every(c=>c.passed));assert.equal(r.commands.some(a=>a[0]==='orders'),false);
+});
+
+test('worker completes buy, fill, profit exit and settlement while preserving lifetime cap',async()=>{
+ const r=rig();let quote=50;
+ r.engine.feed=async()=>{const f=feed();f.stocks[0].quote=quote;return f;};
+ r.broker.submit=async o=>{r.calls.push(o);return {order_id:o.side==='BUY'?'cycle-buy':'cycle-sell'};};
+ r.broker.get=async orderId=>({order_id:orderId,product_id:'JEPI-USD',side:orderId==='cycle-buy'?'BUY':'SELL',status:'FILLED',filled_size:'0.02',average_filled_price:orderId==='cycle-buy'?'50':'53',total_fees:'0'});
+ await r.engine.start(approval);
+ for(const expected of ['reserved','submitted','reconciled_or_waiting'])assert.equal(await r.engine.tick(),expected);
+ quote=53;
+ for(const expected of ['reserved','submitted','reconciled_or_waiting'])assert.equal(await r.engine.tick(),expected);
+ let s=r.db.peek().data;assert.equal(r.calls.length,2);assert.equal(s.history.length,2);assert.equal(s.spentCents,'100');assert.equal(s.cashCents,'100');assert.deepEqual(s.positions,{});assert.equal(s.unsettled[0].cents,'106');
+ await r.engine.confirmSettlement({confirmedSettled:true,orderIds:['cycle-sell']});s=r.db.peek().data;assert.equal(s.cashCents,'206');assert.equal(s.spentCents,'100');assert.equal(s.unsettled.length,0);
+ assert.equal(decideOrder({...s,spentCents:'200',attempts:[]},feed(),now),null);
+});

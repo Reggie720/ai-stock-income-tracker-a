@@ -59,3 +59,6 @@ Both Coinbase HTML hosts returned 403 to the deployed service. If both are unava
 
 ## Empty stock-position list normalization
 Coinbase may omit equity_positions while explicitly reporting total_equities_balance={currency:USD,value:0}. With matching portfolio identity, that exact response is normalized to an empty list. Missing stock totals, nonzero totals, malformed lists or mismatched accounts remain blocking. This establishes no stock eligibility or order success. The existing signed repair supports this specific no-order-sent preflight pause after a fresh position response check, preserving attempts and all original limits.
+
+## Deployed read-only execution audit — November 23
+The tracker key passed fresh account/Trade, USD, public fee schedule, account fee tier, explicit scoped zero stock holdings, and product type/USD/fractional minimum/increment checks for SGOV, JEPI, DIVO and O. The signed audit submits no orders and reports no account identifiers or credentials. An additional mocked worker lifecycle covers BUY reservation, submission, exact fill, SELL trigger, submission, exact fill, pending settlement, owner settlement attestation, and unchanged cumulative spend. These checks do not prove broker stock-account eligibility or a live fill. The signed ledger remains active, with no actual order history at verification.
