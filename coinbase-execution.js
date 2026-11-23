@@ -112,6 +112,27 @@ export function createExecutionBroker({env=process.env,run=executeCoinbaseComman
   return run(args,cfg());
  }
  async function get(orderId,portfolioId){if(typeof orderId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9-]{4,99}$/.test(orderId)||!uuid(portfolioId))throw Error('Invalid order identity');const a=await account();if(a.portfolioId!==portfolioId)throw Error('Portfolio changed');return run(['orders','get',orderId,'product_type==EQUITY'],cfg());}
+ async function audit(portfolioId,products){
+  const report={readOnly:true,ordersSubmitted:0,checks:[]};
+  const add=(name,passed,detail)=>report.checks.push({name,passed,...(detail?{detail}: {})});
+  try{
+   const a=await account();add('account',a.portfolioId===portfolioId&&a.canTrade===true);if(a.portfolioId!==portfolioId||!a.canTrade)return report;
+   add('usd',units(a.spendableUsd)>=units('1'));
+   add('public_fees',await verifyFeeSchedule()===true);
+   const c=cfg(),fees=await run(['fees','product_type==EQUITY'],c);
+   add('account_fees',units(fees.fee_tier?.maker_fee_rate)===0n&&units(fees.fee_tier?.taker_fee_rate)===0n&&fees.has_cost_plus_commission!==true);
+   const p=await run(['portfolios','get',portfolioId,'currency==USD'],c);
+   const summary={portfolioMatches:p.portfolio?.uuid===portfolioId,hasEquityList:Array.isArray(p.equity_positions),equityListCount:Array.isArray(p.equity_positions)?p.equity_positions.length:null,equityAssetTypes:Array.isArray(p.equity_positions)?p.equity_positions.map(x=>typeof x?.asset):[],equityTotal:p.portfolio_balances?.total_equities_balance??null};
+   try{verifiedEquityPositions(p,portfolioId);add('positions',true,summary);}catch{add('positions',false,summary);}
+   for(const product of products){
+    if(!PLAN.products.includes(product))throw Error('Unapproved audit product');
+    const p=await run(['products','get',product],c);
+    const ok=p.product_id===product&&p.product_type==='EQUITY'&&p.quote_currency_id==='USD'&&p.trading_disabled!==true&&p.cancel_only!==true&&(!p.status||String(p.status).toLowerCase()==='online')&&units(p.base_increment)>0n&&units(p.base_increment)<units('1')&&units(p.quote_min_size)<=units('1');
+    add(product,ok,{type:p.product_type??null,status:p.status??null,quoteCurrency:p.quote_currency_id??null,quoteMinimum:p.quote_min_size??null,baseIncrement:p.base_increment??null});
+   }
+  }catch(e){add('read_failed',false,{category:['AUTH','PERMISSION','TIMEOUT','UNAVAILABLE'].includes(e.kind)?e.kind:'unverified_response'});}
+  return report;
+ }
  async function verifyPositions(portfolioId){const a=await account();if(a.portfolioId!==portfolioId)throw Error('Portfolio changed');const p=await run(['portfolios','get',portfolioId,'currency==USD'],cfg());verifiedEquityPositions(p,portfolioId);return true;}
- return {account,submit,get,verifyPositions};
+ return {account,submit,get,verifyPositions,audit};
 }

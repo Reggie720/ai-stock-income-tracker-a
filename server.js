@@ -712,6 +712,7 @@ const server=http.createServer(async(req,res)=>{
    if(workerSignatures.has(given))return send(res,202,{status:'duplicate_worker_request'});
    workerSignatures.set(given,seconds);
    if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
+   if(url.searchParams.get('check')==='execution'){const row=await engine().status();if(!row.data.portfolioId||!row.data.approval)return send(res,409,{error:'No approved plan'});return send(res,200,{executionAudit:await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).audit(row.data.portfolioId,row.data.approval.products)});}
    if(workerBusy)return send(res,202,{status:'busy'});
    workerBusy=true;try{return send(res,200,{status:url.searchParams.get('repair')==='fees'?await engine().recoverFeePause(verifyStockFees):await engine().tick()});}catch{return send(res,503,{error:'Trading worker stopped; account or ledger verification is required'});}finally{workerBusy=false;}
   }
