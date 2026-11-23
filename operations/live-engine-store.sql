@@ -4,7 +4,7 @@ create table public.stock_tracker_live_engine (
  data jsonb not null, updated_at timestamptz not null default now(),
  check(data->>'schema'='1'),check(data->>'mode' in ('off','active','paused')),
  check((data->>'spentCents') ~ '^[0-9]{1,16}$'),
- check((data->>'spentCents')::numeric between 0 and 500)
+ check((data->>'spentCents')::numeric between 0 and 200)
 );
 alter table public.stock_tracker_live_engine enable row level security;
 revoke all on public.stock_tracker_live_engine from public,anon,authenticated,service_role;

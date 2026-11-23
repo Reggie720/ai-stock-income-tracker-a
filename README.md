@@ -1,6 +1,6 @@
 # Current automatic-trading release
 
-The tracker now includes a bounded Coinbase stock-order engine, durable signed order ledger, weekday scheduler, and owner-reviewed Start/Pause controls at `/#trading`. It stays OFF until the selected key has View + Trade, the owner confirms the stock account and settled USD, and accepts the exact proposed plan. The selected limits are $5 cumulative buys including fees and $10 stopping new buys. Savings reserves half the bot balance strictly above $200 only when enough verified cash is available; no external withdrawal or transfer is implemented.
+The tracker now includes a bounded Coinbase stock-order engine, durable signed order ledger, weekday scheduler, and owner-reviewed Start/Pause controls at `/#trading`. It stays OFF until the selected key has View + Trade, the owner confirms the stock account and settled USD, and accepts the exact proposed plan. The selected limits are $2 cumulative buys including fees and $10 stopping new buys. Savings reserves half the bot balance strictly above $200 only when enough verified cash is available; no external withdrawal or transfer is implemented.
 
 See [current trading setup and validation](operations/TRADING_SETUP.md). No real financial order was placed for testing. Mechanical tests are not evidence of profitable returns. Existing manually tracked holdings and research remain separate from bot order records.
 

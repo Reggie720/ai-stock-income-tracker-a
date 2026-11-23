@@ -9,12 +9,12 @@ function runner({trade=false,cash='0',failPermission=false,hasNext=false}={}){re
  return {portfolio_id:id,has_next:hasNext,cursor:hasNext?'repeat':null,accounts:[{currency:'USD',ready:true,active:true,available_balance:{currency:'USD',value:cash}}]};
 };}
 test('read-only key and zero USD are distinct verified blockers; user terms recorded; no engine activation',async()=>{
- const r=await createTradingReadiness({env,runner:runner()})();assert.equal(r.canTrade,false);assert.equal(r.spendableUsd,'0');assert.equal(r.terms.stopNewBuysAtLoss,'10.00');assert.equal(r.terms.totalBudget,'5.00');assert.equal(r.engineInstalled,true);assert.equal(r.ordersEnabled,false);assert.equal(r.automaticTrading,false);
+ const r=await createTradingReadiness({env,runner:runner()})();assert.equal(r.canTrade,false);assert.equal(r.spendableUsd,'0');assert.equal(r.terms.stopNewBuysAtLoss,'10.00');assert.equal(r.terms.totalBudget,'2.00');assert.equal(r.engineInstalled,true);assert.equal(r.ordersEnabled,false);assert.equal(r.automaticTrading,false);
  for(const c of ['trade_permission','no_usd','strategy_review_required'])assert.ok(r.blockers.some(b=>b.code===c));
  assert.doesNotMatch(JSON.stringify(r),new RegExp(id+'|fictional-secret'));
 });
 test('even trade grant and USD do not prove stock eligibility or activate an engine',async()=>{
- const r=await createTradingReadiness({env,runner:runner({trade:true,cash:'25.000000000000000000'})})();assert.equal(r.canTrade,true);assert.equal(r.spendableUsd,'25.000000000000000000');assert.equal(r.ordersEnabled,false);assert.equal(r.stockApproval,'not_verified');assert.ok(r.blockers.some(b=>b.code==='strategy_review_required'));assert.ok(!r.blockers.some(b=>['no_usd','below_budget'].includes(b.code)));
+ const r=await createTradingReadiness({env,runner:runner({trade:true,cash:'22.000000000000000000'})})();assert.equal(r.canTrade,true);assert.equal(r.spendableUsd,'22.000000000000000000');assert.equal(r.ordersEnabled,false);assert.equal(r.stockApproval,'not_verified');assert.ok(r.blockers.some(b=>b.code==='strategy_review_required'));assert.ok(!r.blockers.some(b=>['no_usd','below_budget'].includes(b.code)));
 });
 test('unknown permission, incomplete pagination, mismatched account and missing money fail closed',async()=>{
  for(const run of [runner({failPermission:true}),runner({hasNext:true}),runner({cash:null}),async a=>a[0]==='portfolios'?{portfolios:[{uuid:id}]}:a[0]==='api-key'?{portfolio_uuid:other,can_view:true,can_trade:true}:{portfolio_id:other,accounts:[],has_next:false}]){
@@ -31,6 +31,6 @@ test('production read runner rejects every financial or arbitrary command before
  for(const a of [['orders','create'],['transfer'],['balance'],['portfolios','get','bad','currency==USD'],['api-key','permissions','extra'],['balance',`portfolio_id==${id}`,'show_zero==true','cursor==bad;command']])await assert.rejects(runCoinbaseRead(a,{}),/Unsupported read/);
 });
 
-test('five dollars clears funding check while 4.99 is below budget',async()=>{
- for(const cash of ['4.99','5.00']){const r=await createTradingReadiness({env,runner:runner({trade:true,cash})})();assert.equal(r.blockers.some(b=>b.code==='below_budget'),cash==='4.99');}
+test('two dollars clears funding check while 1.99 is below budget',async()=>{
+ for(const cash of ['1.99','2.00']){const r=await createTradingReadiness({env,runner:runner({trade:true,cash})})();assert.equal(r.blockers.some(b=>b.code==='below_budget'),cash==='1.99');}
 });

@@ -3,7 +3,7 @@ import {portfolioBinding} from './trading-engine.js';
 const uuid=s=>typeof s==='string'&&/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(s);
 const decimal=s=>typeof s==='string'&&/^(0|[1-9]\d{0,12})(\.\d{1,18})?$/.test(s);
 // Owner-selected terms. They are not activated trading permission.
-export const tradingTerms=Object.freeze({currency:'USD',totalBudget:'5.00',stopNewBuysAtLoss:'10.00',
+export const tradingTerms=Object.freeze({currency:'USD',totalBudget:'2.00',stopNewBuysAtLoss:'10.00',
   savingsThreshold:'200.00',savingsPercentage:50,proposedProducts:['SGOV-USD','JEPI-USD','DIVO-USD','O-USD']});
 const base=()=>({terms:tradingTerms,automaticTrading:false,ordersEnabled:false,
   engineInstalled:true,stockApproval:'not_verified',stockPreviewSupported:false,
@@ -50,7 +50,7 @@ export function createTradingReadiness({env=process.env,runner=runCoinbaseRead,n
      const [whole,frac='']=r.spendableUsd.split('.');
      const value=BigInt(whole)*10n**18n+BigInt(frac.padEnd(18,'0'));
      if(value===0n)block('no_usd','No spendable USD is available for stock purchases. Existing crypto will not be sold automatically.');
-     else if(value<5n*10n**18n)block('below_budget','Available USD is below the selected $5 budget.');
+     else if(value<2n*10n**18n)block('below_budget','Available USD is below the selected $2 budget.');
     }catch{block('usd_unverified','Spendable USD could not be verified for this portfolio. Cash equivalents and staked holdings are not substituted.');}
    }catch{block('connection_unverified','The tracker’s selected Coinbase portfolio could not be verified.');}
    block('stock_approval_unverified','Stock account eligibility has not been established by balance or product lookup.');
