@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {coinbaseConfig,executeCoinbaseCommand} from './coinbase-reader.js';
 import {PLAN,PLAN_VERSION,units,session} from './trading-engine.js';
 const uuid=s=>typeof s==='string'&&/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(s);
@@ -17,10 +18,22 @@ export function createFeeScheduleVerifier({request=fetch,now=Date.now}={}){
  }
  async function inspect(){
   let proof=await inspectSource('https://www.coinbase.com/stocks');
-  if(['source_unavailable','source_request_failed'].includes(proof.reason))proof=await inspectSource('https://www.coinbase.com/stocks');
+  if(proof.reason==='source_request_failed'||proof.httpStatus>=500)proof=await inspectSource('https://www.coinbase.com/stocks');
   // Fixed official help source is permitted only when the main source is unavailable.
   // Missing or changed fee language is never bypassed using another source.
   if(['source_unavailable','source_request_failed'].includes(proof.reason))proof=await inspectSource('https://help.coinbase.com/en/trading-and-funding/pricing-and-fees/stock-pricing-fees');
+  if(['source_unavailable','source_request_failed'].includes(proof.reason)){
+   // Official schedule linked by Coinbase's stocks page, reviewed Nov 23 2026.
+   // Pin the reviewed document: changed bytes are not silently interpreted as zero fees.
+   const source='https://images.ctfassets.net/o10es7wu5gm1/15gaaAIKknqZUL2LQVQ5sN/7b369aefcc0bb423fb88cd7c258119b3/CCM_Fee_Schedule.pdf';
+   try{
+    const r=await request(source,{redirect:'error',signal:AbortSignal.timeout(15000)});
+    if(!r.ok)return {verified:false,source,httpStatus:r.status,reason:'source_unavailable'};
+    const bytes=Buffer.from(await r.arrayBuffer());
+    const verified=bytes.length<1000000&&createHash('sha256').update(bytes).digest('hex')==='c3a4e390d786113208d773082dd1db13f0134fae9acb45487ab47583f8ef1ab3';
+    return {verified,source,httpStatus:r.status,reason:verified?'reviewed_official_schedule_verified':'schedule_changed_or_unverified'};
+   }catch{return {verified:false,source,reason:'source_request_failed'};}
+  }
   return proof;
  }
  async function verify(){

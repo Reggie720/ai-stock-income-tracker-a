@@ -111,7 +111,7 @@ test('fee verifier retries transient failures, ignores script claims and does no
 test('fee proof uses fixed official help disclosure only after unavailable marketing page, never a changed fee statement',async()=>{
  const help='While Coinbase Capital Markets (CCM) does not charge commission or fees for stock trades in your CCM brokerage account, there are fees for certain services that CCM’s clearing firm and your stock custodian provide.';
  const urls=[];const v=createFeeScheduleVerifier({request:async url=>{urls.push(url);return url.includes('help.coinbase.com')?{ok:true,status:200,text:async()=>help}:{ok:false,status:403};}});
- assert.equal(await v(),true);assert.deepEqual(urls,['https://www.coinbase.com/stocks','https://www.coinbase.com/stocks','https://help.coinbase.com/en/trading-and-funding/pricing-and-fees/stock-pricing-fees']);
+ assert.equal(await v(),true);assert.deepEqual(urls,['https://www.coinbase.com/stocks','https://help.coinbase.com/en/trading-and-funding/pricing-and-fees/stock-pricing-fees']);
  let calls=0;const changed=createFeeScheduleVerifier({request:async()=>{calls++;return {ok:true,status:200,text:async()=> 'Coinbase stock trades now carry a fee.'};}});assert.equal(await changed(),false);assert.equal(calls,1);
  const missing=createFeeScheduleVerifier({request:async url=>url.includes('help.')?{ok:true,status:200,text:async()=> 'Commission free; other fees apply.'}:{ok:false,status:403}});assert.equal(await missing(),false);
 });
@@ -124,4 +124,9 @@ test('fee repair resumes only the previously approved fee-paused plan and cannot
  await r.engine.pause();assert.equal(await r.engine.recoverFeePause(async()=>true),'not_fee_paused');
  row=await r.db.read();await r.db.cas(row.version,{...row.data,mode:'paused',reason});
  assert.equal(await r.engine.recoverFeePause(async()=>{await r.engine.pause();return true;}),'state_changed');assert.equal(r.db.peek().data.mode,'paused');
+});
+
+test('official schedule fallback rejects changed document bytes and non-success responses',async()=>{
+ const changed=createFeeScheduleVerifier({request:async url=>url.endsWith('.pdf')?{ok:true,status:200,arrayBuffer:async()=>new TextEncoder().encode('unreviewed fees').buffer}:{ok:false,status:403}});assert.equal(await changed(),false);
+ const unavailable=createFeeScheduleVerifier({request:async()=>({ok:false,status:403})});assert.equal(await unavailable(),false);
 });
