@@ -104,15 +104,16 @@ export class TradingEngine{
  }
  async recoverFeePause(verifyFees){
   const row=await this.status(),s=row.data;
-  if(s.mode!=='paused'||s.reason!=='No order sent: Current zero stock-trade fees could not be verified from Coinbase disclosures'||s.pending||!s.portfolioId)return 'not_fee_paused';
+  if(s.mode!=='paused'||!['No order sent: Current zero stock-trade fees could not be verified from Coinbase disclosures','No order sent: Stock position identity could not be verified'].includes(s.reason)||s.pending||!s.portfolioId)return 'not_fee_paused';
   const a=s.approval;
   if(a?.version!==PLAN_VERSION||a.equityAccountConfirmed!==true||a.settledFundsConfirmed!==true||a.marketOrderAccepted!==true||!Array.isArray(a.products)||!a.products.length||a.products.some(p=>!PLAN.products.includes(p))||a.portfolioBinding!==portfolioBinding(s.portfolioId))throw Error('Original approved plan could not be verified');
   if(await verifyFees()!==true)return 'fees_unverified';
+  if(s.reason==='No order sent: Stock position identity could not be verified'&&await this.broker.verifyPositions(s.portfolioId)!==true)return 'positions_unverified';
   const account=await this.broker.account();
   if(!account.canTrade||account.portfolioId!==s.portfolioId||units(account.spendableUsd)<(money(s.cashCents)+money(s.reserveCents))*(SCALE/100n))throw Error('Account no longer meets the approved plan');
   // Preserve original consent, budget, cash, attempts and positions. A racing
   // owner pause changes the version and must never be overwritten.
-  if(!await this.store.cas(row.version,{...s,mode:'active',reason:'Fee verification restored; resumed the existing approved plan. Waiting for a qualified signal.'}))return 'state_changed';
+  if(!await this.store.cas(row.version,{...s,mode:'active',reason:'Preflight verification restored; resumed the existing approved plan. Waiting for a qualified signal.'}))return 'state_changed';
   return 'approved_plan_resumed';
  }
  async confirmSettlement(input){

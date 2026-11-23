@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {TradingEngine,emptyEngine,PLAN_VERSION,decideOrder,reconcileOrder,session,portfolioBinding} from './trading-engine.js';
-import {createExecutionBroker,NoOrderSent,createFeeScheduleVerifier} from './coinbase-execution.js';
+import {createExecutionBroker,NoOrderSent,createFeeScheduleVerifier,verifiedEquityPositions} from './coinbase-execution.js';
 const id='11111111-1111-4111-8111-111111111111',client='22222222-2222-4222-8222-222222222222';
 const now=Date.parse('2026-11-23T16:00:00Z');
 const approval={version:PLAN_VERSION,portfolioBinding:portfolioBinding(id),accepted:true,equityAccountConfirmed:true,settledFundsConfirmed:true,marketOrderAccepted:true,products:['JEPI-USD']};
@@ -129,4 +129,16 @@ test('fee repair resumes only the previously approved fee-paused plan and cannot
 test('official schedule fallback rejects changed document bytes and non-success responses',async()=>{
  const changed=createFeeScheduleVerifier({request:async url=>url.endsWith('.pdf')?{ok:true,status:200,arrayBuffer:async()=>new TextEncoder().encode('unreviewed fees').buffer}:{ok:false,status:403}});assert.equal(await changed(),false);
  const unavailable=createFeeScheduleVerifier({request:async()=>({ok:false,status:403})});assert.equal(await unavailable(),false);
+});
+
+test('omitted equity list means empty only with explicit scoped USD zero stock balance',()=>{
+ const p={portfolio:{uuid:id},portfolio_balances:{total_equities_balance:{currency:'USD',value:'0'}}};assert.deepEqual(verifiedEquityPositions(p,id),[]);
+ for(const total of [undefined,{currency:'USD',value:'1'},{currency:'USD',value:0},{currency:'EUR',value:'0'}])assert.throws(()=>verifiedEquityPositions({...p,portfolio_balances:{total_equities_balance:total}},id));
+ assert.throws(()=>verifiedEquityPositions(p,'other'));assert.throws(()=>verifiedEquityPositions({...p,equity_positions:null},id));
+ assert.throws(()=>verifiedEquityPositions({...p,equity_positions:[{}]},id));
+});
+test('position preflight repair rechecks actual broker shape before resuming original plan',async()=>{
+ const r=rig();await r.engine.start(approval);const row=await r.db.read();await r.db.cas(row.version,{...row.data,mode:'paused',reason:'No order sent: Stock position identity could not be verified'});
+ r.broker.verifyPositions=async()=>false;assert.equal(await r.engine.recoverFeePause(async()=>true),'positions_unverified');assert.equal(r.db.peek().data.mode,'paused');
+ r.broker.verifyPositions=async pid=>{assert.equal(pid,id);return true;};assert.equal(await r.engine.recoverFeePause(async()=>true),'approved_plan_resumed');assert.equal(r.calls.length,0);
 });

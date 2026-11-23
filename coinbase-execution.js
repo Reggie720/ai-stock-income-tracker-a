@@ -44,6 +44,17 @@ export function createFeeScheduleVerifier({request=fetch,now=Date.now}={}){
  verify.inspect=inspect;
  return verify;
 }
+export function verifiedEquityPositions(portfolio,portfolioId){
+ if(portfolio?.portfolio?.uuid!==portfolioId)throw new NoOrderSent('Stock position identity could not be verified');
+ let positions=portfolio.equity_positions;
+ if(positions===undefined){
+  const total=portfolio.portfolio_balances?.total_equities_balance;
+  if(total?.currency!=='USD'||typeof total.value!=='string'||units(total.value)!==0n)throw new NoOrderSent('Stock position identity could not be verified');
+  positions=[];
+ }
+ if(!Array.isArray(positions)||positions.some(p=>typeof p?.asset!=='string'))throw new NoOrderSent('Stock position identity could not be verified');
+ return positions;
+}
 export function createExecutionBroker({env=process.env,run=executeCoinbaseCommand,now=Date.now,verifyFeeSchedule=createFeeScheduleVerifier({now})}={}){
  const cfg=()=>{const c=coinbaseConfig(env);if(c.error||c.missing)throw new NoOrderSent('The tracker key is missing or invalid');return c;};
  async function account(){
@@ -77,8 +88,8 @@ export function createExecutionBroker({env=process.env,run=executeCoinbaseComman
    const fees=await run(['fees','product_type==EQUITY'],c);
    if(units(fees.fee_tier?.maker_fee_rate)!==0n||units(fees.fee_tier?.taker_fee_rate)!==0n||fees.has_cost_plus_commission===true)throw new NoOrderSent('Zero stock commission could not be verified');
    const portfolio=await run(['portfolios','get',order.portfolioId,'currency==USD'],c);
-   if(portfolio.portfolio?.uuid!==order.portfolioId||!Array.isArray(portfolio.equity_positions)||portfolio.equity_positions.some(p=>typeof p.asset!=='string'))throw new NoOrderSent('Stock position identity could not be verified');
-   const symbol=order.productId.replace(/-USD$/,''),positions=portfolio.equity_positions.filter(p=>p.asset===symbol);
+   const equityPositions=verifiedEquityPositions(portfolio,order.portfolioId);
+   const symbol=order.productId.replace(/-USD$/,''),positions=equityPositions.filter(p=>p.asset===symbol);
    // Portfolio equity amounts can be numeric/rounded. Use them only as a
    // conservative account guard; SELL size always comes from exact fill strings.
    const quantityField=v=>{if(typeof v==='string')return units(v);if(typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1e9){const s=String(v);if(/^(0|[1-9]\d*)(\.\d{1,8})?$/.test(s)&&s.replace('.','').replace(/^0+/,'').length<=15)return units(s);}if(v&&v.currency===symbol)return units(v.value);throw new NoOrderSent('Stock quantity is unavailable');};
@@ -101,5 +112,6 @@ export function createExecutionBroker({env=process.env,run=executeCoinbaseComman
   return run(args,cfg());
  }
  async function get(orderId,portfolioId){if(typeof orderId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9-]{4,99}$/.test(orderId)||!uuid(portfolioId))throw Error('Invalid order identity');const a=await account();if(a.portfolioId!==portfolioId)throw Error('Portfolio changed');return run(['orders','get',orderId,'product_type==EQUITY'],cfg());}
- return {account,submit,get};
+ async function verifyPositions(portfolioId){const a=await account();if(a.portfolioId!==portfolioId)throw Error('Portfolio changed');const p=await run(['portfolios','get',portfolioId,'currency==USD'],cfg());verifiedEquityPositions(p,portfolioId);return true;}
+ return {account,submit,get,verifyPositions};
 }
