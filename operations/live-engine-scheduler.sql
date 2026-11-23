@@ -10,7 +10,7 @@ select cron.schedule('stock-tracker-coinbase-live-v1','* * * * *',$job$
     convert_to(floor(extract(epoch from now()))::bigint::text,'UTF8'),
     convert_to((select decrypted_secret from vault.decrypted_secrets where name='stock_tracker_coinbase_worker'),'UTF8'),
     'sha256'),'hex')),
-  body:='{}'::jsonb,timeout_milliseconds:=10000)
+  body:='{}'::jsonb,timeout_milliseconds:=90000)
  from public.stock_tracker_live_engine
  where id='main' and (data->>'mode'='active' or data#>>'{pending,orderId}' is not null)
   and extract(isodow from now() at time zone 'America/New_York') between 1 and 5
