@@ -4,22 +4,28 @@ const uuid=s=>typeof s==='string'&&/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.t
 export class NoOrderSent extends Error{constructor(message){super(message);this.noOrderSent=true;}}
 export function createFeeScheduleVerifier({request=fetch,now=Date.now}={}){
  let checkedAt=0,valid=false,last=null;
- async function inspect(){
-  const source='https://www.coinbase.com/stocks';
+ async function inspectSource(source){
   try{
    const r=await request(source,{redirect:'error',headers:{Accept:'text/html','User-Agent':'StockTracker/1.0 (public fee disclosure check)'},signal:AbortSignal.timeout(15000)});
    if(!r.ok)return last={verified:false,source,httpStatus:r.status,reason:'source_unavailable'};
    const html=await r.text();if(html.length>3000000)return last={verified:false,source,httpStatus:r.status,reason:'source_too_large'};
    const text=html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|#160|#x[aA]0);/g,' ').replace(/\s+/g,' ').toLowerCase();
-   const commissions=text.includes('does not charge commission or fees for stock trades in your ccm brokerage account.'),regulatory=text.includes('we do not currently charge regulatory fees.');
+   const commissions=text.includes('does not charge commission or fees for stock trades in your ccm brokerage account');
+   const regulatory=text.includes('we do not currently charge regulatory fees.')||(source==='https://help.coinbase.com/en/trading-and-funding/pricing-and-fees/stock-pricing-fees'&&text.includes('while coinbase capital markets (ccm) does not charge commission or fees for stock trades in your ccm brokerage account, there are fees for certain services that ccm’s clearing firm and your stock custodian provide.'));
    return last={verified:commissions&&regulatory,source,httpStatus:r.status,commissions,regulatory,reason:commissions&&regulatory?'verified':'disclosure_not_verified'};
   }catch(e){return last={verified:false,source,reason:'source_request_failed',errorType:e?.name==='TimeoutError'?'timeout':'network_or_redirect'};}
  }
+ async function inspect(){
+  let proof=await inspectSource('https://www.coinbase.com/stocks');
+  if(['source_unavailable','source_request_failed'].includes(proof.reason))proof=await inspectSource('https://www.coinbase.com/stocks');
+  // Fixed official help source is permitted only when the main source is unavailable.
+  // Missing or changed fee language is never bypassed using another source.
+  if(['source_unavailable','source_request_failed'].includes(proof.reason))proof=await inspectSource('https://help.coinbase.com/en/trading-and-funding/pricing-and-fees/stock-pricing-fees');
+  return proof;
+ }
  async function verify(){
   if(valid&&now()-checkedAt<86400000)return true;
-  valid=false;let proof=await inspect();
-  // Retry only an unavailable source, never contradictory or missing fee terms.
-  if(!proof.verified&&['source_unavailable','source_request_failed'].includes(proof.reason))proof=await inspect();
+  valid=false;const proof=await inspect();
   valid=proof.verified===true;checkedAt=now();return valid;
  }
  verify.inspect=inspect;

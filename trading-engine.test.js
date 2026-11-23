@@ -107,3 +107,21 @@ test('fee verifier retries transient failures, ignores script claims and does no
  assert.equal(await safe(),false);assert.equal(n,1);body=terms;assert.equal(await safe(),true);assert.equal(n,2);
  const unavailable=createFeeScheduleVerifier({request:async()=>{throw new Error('unavailable');}});assert.equal(await unavailable(),false);assert.equal((await unavailable.inspect()).reason,'source_request_failed');
 });
+
+test('fee proof uses fixed official help disclosure only after unavailable marketing page, never a changed fee statement',async()=>{
+ const help='While Coinbase Capital Markets (CCM) does not charge commission or fees for stock trades in your CCM brokerage account, there are fees for certain services that CCM’s clearing firm and your stock custodian provide.';
+ const urls=[];const v=createFeeScheduleVerifier({request:async url=>{urls.push(url);return url.includes('help.coinbase.com')?{ok:true,status:200,text:async()=>help}:{ok:false,status:403};}});
+ assert.equal(await v(),true);assert.deepEqual(urls,['https://www.coinbase.com/stocks','https://www.coinbase.com/stocks','https://help.coinbase.com/en/trading-and-funding/pricing-and-fees/stock-pricing-fees']);
+ let calls=0;const changed=createFeeScheduleVerifier({request:async()=>{calls++;return {ok:true,status:200,text:async()=> 'Coinbase stock trades now carry a fee.'};}});assert.equal(await changed(),false);assert.equal(calls,1);
+ const missing=createFeeScheduleVerifier({request:async url=>url.includes('help.')?{ok:true,status:200,text:async()=> 'Commission free; other fees apply.'}:{ok:false,status:403}});assert.equal(await missing(),false);
+});
+
+test('fee repair resumes only the previously approved fee-paused plan and cannot override an owner pause',async()=>{
+ const reason='No order sent: Current zero stock-trade fees could not be verified from Coinbase disclosures';
+ const r=rig();await r.engine.start(approval);let row=await r.db.read();await r.db.cas(row.version,{...row.data,mode:'paused',reason});
+ assert.equal(await r.engine.recoverFeePause(async()=>false),'fees_unverified');assert.equal(r.db.peek().data.mode,'paused');
+ assert.equal(await r.engine.recoverFeePause(async()=>true),'approved_plan_resumed');assert.equal(r.calls.length,0);assert.equal(r.db.peek().data.cashCents,'200');
+ await r.engine.pause();assert.equal(await r.engine.recoverFeePause(async()=>true),'not_fee_paused');
+ row=await r.db.read();await r.db.cas(row.version,{...row.data,mode:'paused',reason});
+ assert.equal(await r.engine.recoverFeePause(async()=>{await r.engine.pause();return true;}),'state_changed');assert.equal(r.db.peek().data.mode,'paused');
+});

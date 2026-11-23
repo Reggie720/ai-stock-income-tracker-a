@@ -49,3 +49,8 @@ Sources verified November 21, 2026 America/Phoenix:
 - Installed pinned official CLI 0.0.11 command help (current commands supersede older bundled examples).
 - https://supabase.com/docs/guides/functions/schedule-functions
 - https://supabase.com/docs/guides/database/functions
+
+## Fee source outage repair (November 23, 2026)
+The deployed host received HTTP 403 from Coinbase's public stocks marketing page. Fee verification now retries temporary source failures, then reads the fixed official stock-pricing Help page when the marketing page is unavailable. That page must explicitly state no commissions or fees for stock trades; a changed/missing fee statement blocks trading. Script/style claims are ignored. Daily disclosure expiry and independently verified zero account commission rates remain required.
+
+The signed worker supports a read-only fee diagnostic. An explicitly requested fee repair may resume only the exact already approved plan paused by that specific no-order-sent fee error, after fresh public-fee and scoped account/USD checks. It preserves the original consent, spending, attempts and holdings. It cannot resume owner-paused or unknown-order states or override a racing owner pause.

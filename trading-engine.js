@@ -102,6 +102,19 @@ export class TradingEngine{
   const next=copy(s);next.approval={version:PLAN_VERSION,portfolioBinding:approval.portfolioBinding,products:[...new Set(approval.products)],at:new Date(this.now()).toISOString(),equityAccountConfirmed:true,settledFundsConfirmed:true,marketOrderAccepted:true};next.mode='active';next.portfolioId=account.portfolioId;if(!s.portfolioId)next.cashCents='200';next.reason='Active; waiting for a qualified signal. No order is guaranteed.';
   if(!await this.store.cas(row.version,next))throw Error('State changed; refresh before starting');return next;
  }
+ async recoverFeePause(verifyFees){
+  const row=await this.status(),s=row.data;
+  if(s.mode!=='paused'||s.reason!=='No order sent: Current zero stock-trade fees could not be verified from Coinbase disclosures'||s.pending||!s.portfolioId)return 'not_fee_paused';
+  const a=s.approval;
+  if(a?.version!==PLAN_VERSION||a.equityAccountConfirmed!==true||a.settledFundsConfirmed!==true||a.marketOrderAccepted!==true||!Array.isArray(a.products)||!a.products.length||a.products.some(p=>!PLAN.products.includes(p))||a.portfolioBinding!==portfolioBinding(s.portfolioId))throw Error('Original approved plan could not be verified');
+  if(await verifyFees()!==true)return 'fees_unverified';
+  const account=await this.broker.account();
+  if(!account.canTrade||account.portfolioId!==s.portfolioId||units(account.spendableUsd)<(money(s.cashCents)+money(s.reserveCents))*(SCALE/100n))throw Error('Account no longer meets the approved plan');
+  // Preserve original consent, budget, cash, attempts and positions. A racing
+  // owner pause changes the version and must never be overwritten.
+  if(!await this.store.cas(row.version,{...s,mode:'active',reason:'Fee verification restored; resumed the existing approved plan. Waiting for a qualified signal.'}))return 'state_changed';
+  return 'approved_plan_resumed';
+ }
  async confirmSettlement(input){
   if(input?.confirmedSettled!==true||!Array.isArray(input.orderIds)||!input.orderIds.length||new Set(input.orderIds).size!==input.orderIds.length)throw Error('Confirm the exact settled sale records');
   const row=await this.status(),s=row.data;if(s.pending||!s.portfolioId)throw Error('Resolve pending orders first');
