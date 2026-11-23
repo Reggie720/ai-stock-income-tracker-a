@@ -21,6 +21,7 @@ export function validateEngine(s){
  for(const k of ['cashCents','spentCents','reserveCents'])money(s[k]);
  if(money(s.spentCents)>200n)throw Error('Spending cap exceeded');
  for(const [p,v]of Object.entries(s.positions)){if(!PLAN.products.includes(p)||units(v.quantity)<0n||money(v.costCents)<0n)throw Error('Invalid bot position');}
+ if(s.scheduledEntry&&(!PLAN.products.includes(s.scheduledEntry.productId)||s.scheduledEntry.quoteCents!=='100'||!/^\d{4}-\d{2}-\d{2}$/.test(s.scheduledEntry.day)||!['queued','reserved','submitted','completed','failed'].includes(s.scheduledEntry.status)))throw Error('Invalid scheduled entry');
  if(s.pending&&(!PLAN.products.includes(s.pending.productId)||!['BUY','SELL'].includes(s.pending.side)||!['reserved','submitting','submitted','unknown'].includes(s.pending.phase)))throw Error('Invalid pending order');
  return s;
 }
@@ -57,6 +58,11 @@ export function decideOrder(s,feed,now){
   if(value*100n>=cost*105n||value*100n<=cost*95n)return {productId:p,side:'SELL',quantity:v.quantity,signalQuoteAt:q.quoteAt,reason:value>=cost?'take_profit_5_percent':'position_exit_loss_5_percent'};
  }
  if(s.buyPaused===true||equity<=(units(PLAN.budget)-units(PLAN.lossStop))/(SCALE/100n)||money(s.spentCents)+100n>200n||money(s.cashCents)<100n)return null;
+ const scheduled=s.scheduledEntry;
+ if(scheduled&&scheduled.day===session(now).day&&(scheduled.status==='queued'||scheduled.status==='reserved'&&s.recheckingEntryId===scheduled.id)){
+  const p=scheduled.productId,q=stock(feed,p,now),key=`${session(now).day}:${p}`;
+  if(selected.includes(p)&&q&&!s.positions[p]&&!s.attempts.includes(key))return {productId:p,side:'BUY',quoteCents:'100',attemptKey:key,scheduledEntryId:scheduled.id,signalQuoteAt:q.quoteAt,reason:'owner_authorized_one_time_entry'};
+ }
  for(const p of selected){
   const q=stock(feed,p,now),key=`${session(now).day}:${p}`;
   if(!q||q.pattern?.qualifies!==true||s.positions[p]||s.attempts.includes(key))continue;
@@ -82,6 +88,7 @@ export function reconcileOrder(s,order,now){
   if(proceeds>0n)next.unsettled.push({orderId:p.orderId,cents:String(proceeds),createdAt:new Date(now).toISOString(),status:'settlement_not_verified'});
  }
  next.history.push({clientOrderId:p.clientOrderId,orderId:p.orderId,productId:p.productId,side:p.side,status:order.status,quantity:decimal(filled),fees:decimal(fees),costOrProceedsCents:String(p.side==='BUY'?charge:proceeds),at:new Date(now).toISOString()});
+ if(p.scheduledEntryId&&next.scheduledEntry?.id===p.scheduledEntryId)next.scheduledEntry.status='completed';
  next.pending=null;next.lastTick=new Date(now).toISOString();next.reason='Order reconciled. Sale proceeds remain unavailable until settlement is verified.';
  return next;
 }
@@ -101,6 +108,17 @@ export class TradingEngine{
   if(s.pending)throw Error('Reconcile the pending order before starting');if(s.portfolioId&&s.portfolioId!==account.portfolioId)throw Error('The selected portfolio changed');
   const next=copy(s);next.approval={version:PLAN_VERSION,portfolioBinding:approval.portfolioBinding,products:[...new Set(approval.products)],at:new Date(this.now()).toISOString(),equityAccountConfirmed:true,settledFundsConfirmed:true,marketOrderAccepted:true};next.mode='active';next.portfolioId=account.portfolioId;if(!s.portfolioId)next.cashCents='200';next.reason='Active; waiting for a qualified signal. No order is guaranteed.';
   if(!await this.store.cas(row.version,next))throw Error('State changed; refresh before starting');return next;
+ }
+ async scheduleEntry(input){
+  if(!input||!PLAN.products.includes(input.productId)||!/^\d{4}-\d{2}-\d{2}$/.test(input.day)||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId))throw Error('Invalid scheduled purchase');
+  const today=session(this.now()).day,target=Date.parse(input.day+'T16:00:00Z');
+  if(input.day<=today||target-this.now()>7*86400000||!session(target).open)throw Error('Choose a verified future trading day within seven days');
+  const row=await this.status(),s=row.data;
+  if(s.mode!=='active'||s.pending||!s.portfolioId||s.approval?.version!==PLAN_VERSION||!s.approval.products.includes(input.productId)||s.positions[input.productId]||s.scheduledEntry||money(s.spentCents)+100n>200n||money(s.cashCents)<100n||s.buyPaused)throw Error('Existing ledger cannot accept another scheduled purchase');
+  const a=await this.broker.account();if(!a.canTrade||a.portfolioId!==s.portfolioId||units(a.spendableUsd)<SCALE+money(s.reserveCents)*(SCALE/100n))throw Error('Account funding or permission check failed');
+  const next=copy(s);next.scheduledEntry={id:input.authorizationId,productId:input.productId,day:input.day,quoteCents:'100',status:'queued',authorizedAt:new Date(this.now()).toISOString(),basis:'Owner explicitly authorized one $1 purchase without the entry signal; existing limits, session and sell rules retained.'};
+  next.reason='Owner-authorized $1 '+input.productId.replace('-USD','')+' purchase queued for '+input.day+'; existing sell rules and total cap retained.';
+  if(!await this.store.cas(row.version,next))throw Error('State changed; scheduled purchase was not saved');return {status:'scheduled',entry:next.scheduledEntry};
  }
  async recoverFeePause(verifyFees){
   const row=await this.status(),s=row.data;
@@ -147,7 +165,7 @@ export class TradingEngine{
     next.savingsEvents=[...(next.savingsEvents||[]),{id:this.id(),cents:String(amount),at:new Date(now).toISOString()}];await this.store.cas(row.version,next);return 'savings_reserved';
    }
    const candidate=decideOrder(s,feed,now);if(!candidate)return 'waiting';
-   const next=copy(s);next.pending={...candidate,clientOrderId:this.id(),phase:'reserved',reservedAt:now,orderId:null};if(candidate.attemptKey)next.attempts.push(candidate.attemptKey);
+   const next=copy(s);next.pending={...candidate,clientOrderId:this.id(),phase:'reserved',reservedAt:now,orderId:null};if(candidate.attemptKey)next.attempts.push(candidate.attemptKey);if(candidate.scheduledEntryId)next.scheduledEntry.status='reserved';
    if(!await this.store.cas(row.version,next))return 'concurrent_worker';return 'reserved';
   }
   if(s.pending.phase!=='reserved'||!session(now).open)return 'waiting';
@@ -155,7 +173,7 @@ export class TradingEngine{
   try{account=await this.broker.account();}catch{await this.store.cas(row.version,{...s,mode:'paused',pending:null,reason:'Account check failed before submission. No order was sent.'});return 'account_preflight_blocked';}
   if(!account.canTrade||account.portfolioId!==s.portfolioId)throw Error('Trading permission or portfolio changed');
   // Recheck signal freshness and exit terms immediately before submitting.
-  const decision=decideOrder({...s,pending:null,attempts:s.attempts.filter(x=>x!==s.pending.attemptKey)},await this.feed(),now);
+  const decision=decideOrder({...s,pending:null,recheckingEntryId:s.pending.scheduledEntryId,attempts:s.attempts.filter(x=>x!==s.pending.attemptKey)},await this.feed(),now);
   if(!decision||decision.productId!==s.pending.productId||decision.side!==s.pending.side){await this.store.cas(row.version,{...s,pending:null,reason:'Signal expired before submission.'});return 'expired';}
   if(s.pending.side==='BUY'&&(units(account.spendableUsd)<SCALE+money(s.reserveCents)*(SCALE/100n)||money(s.cashCents)<100n||money(s.spentCents)+100n>200n))return 'insufficient_funds';
   const next=copy(s);next.pending.phase='submitting';next.pending.sentAt=now;next.pending.signalQuoteAt=decision.signalQuoteAt;
@@ -164,7 +182,7 @@ export class TradingEngine{
    const response=await this.broker.submit({...next.pending,portfolioId:s.portfolioId,protectedReserveCents:s.reserveCents,approval:s.approval});
    if(!response||typeof response.order_id!=='string'||response.order_id.length<5)throw Error('Unknown outcome');
    // A pause can race the external request; record the order while retaining pause.
-   for(let n=0;n<3;n++){row=await this.status();if(row.data.pending?.clientOrderId!==next.pending.clientOrderId)throw Error('Ledger changed');const saved=copy(row.data);saved.pending={...saved.pending,phase:'submitted',orderId:response.order_id};if(await this.store.cas(row.version,saved))return 'submitted';}
+   for(let n=0;n<3;n++){row=await this.status();if(row.data.pending?.clientOrderId!==next.pending.clientOrderId)throw Error('Ledger changed');const saved=copy(row.data);saved.pending={...saved.pending,phase:'submitted',orderId:response.order_id};if(saved.pending.scheduledEntryId)saved.scheduledEntry.status='submitted';if(await this.store.cas(row.version,saved))return 'submitted';}
    throw Error('Order ID persistence uncertain');
   }catch(e){
    if(e.noOrderSent===true){row=await this.status();if(row.data.pending?.clientOrderId===next.pending.clientOrderId)await this.store.cas(row.version,{...row.data,mode:'paused',pending:null,reason:'No order sent: '+e.message});return 'preflight_blocked';}

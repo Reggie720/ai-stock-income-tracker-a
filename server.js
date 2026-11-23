@@ -713,6 +713,13 @@ const server=http.createServer(async(req,res)=>{
    workerSignatures.set(given,seconds);
    if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
    if(url.searchParams.get('check')==='execution'){const row=await engine().status();if(!row.data.portfolioId||!row.data.approval)return send(res,409,{error:'No approved plan'});return send(res,200,{executionAudit:await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).audit(row.data.portfolioId,row.data.approval.products)});}
+   if(url.searchParams.get('schedule')==='one-dollar'){
+    const input=await body(req,1024),proof=String(req.headers['x-stock-owner-signature']||'');
+    if(!input||!/^([A-Z]+)-USD$/.test(input.productId||'')||!/^\d{4}-\d{2}-\d{2}$/.test(input.day||'')||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId||'')||!/^[a-f0-9]{64}$/.test(proof))return send(res,401,{error:'Bound owner authorization required'});
+    const signed=crypto.createHmac('sha256',secret).update([stamp,'schedule-one-dollar',input.productId,input.day,input.authorizationId].join('\n')).digest('hex');
+    if(!crypto.timingSafeEqual(Buffer.from(signed,'hex'),Buffer.from(proof,'hex')))return send(res,401,{error:'Bound owner authorization required'});
+    try{return send(res,200,await engine().scheduleEntry(input));}catch{return send(res,409,{error:'Scheduled purchase could not be verified or saved'});}
+   }
    if(workerBusy)return send(res,202,{status:'busy'});
    workerBusy=true;try{return send(res,200,{status:url.searchParams.get('repair')==='fees'?await engine().recoverFeePause(verifyStockFees):await engine().tick()});}catch{return send(res,503,{error:'Trading worker stopped; account or ledger verification is required'});}finally{workerBusy=false;}
   }

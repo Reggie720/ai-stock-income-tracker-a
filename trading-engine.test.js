@@ -160,3 +160,23 @@ test('worker completes buy, fill, profit exit and settlement while preserving li
  await r.engine.confirmSettlement({confirmedSettled:true,orderIds:['cycle-sell']});s=r.db.peek().data;assert.equal(s.cashCents,'206');assert.equal(s.spentCents,'100');assert.equal(s.unsettled.length,0);
  assert.equal(decideOrder({...s,spentCents:'200',attempts:[]},feed(),now),null);
 });
+
+test('explicit one-time entry bypasses only pattern, executes once on its day, preserves cap and exits',async()=>{
+ const r=rig();await r.engine.start(approval);const auth={productId:'JEPI-USD',day:'2026-11-24',authorizationId:'owner-entry-test-20261123'};
+ await r.engine.scheduleEntry(auth);assert.equal(r.calls.length,0);await assert.rejects(r.engine.scheduleEntry(auth));
+ const next=Date.parse('2026-11-24T16:00:00Z');r.engine.now=()=>next;
+ const fresh=()=>{const f=feed();f.updatedAt=new Date(next).toISOString();f.stocks[0].quoteAt=f.updatedAt;f.stocks[0].pattern.qualifies=false;return f;};r.engine.feed=async()=>fresh();
+ const stale=feed();assert.equal(decideOrder(r.db.peek().data,stale,next),null);
+ assert.equal(await r.engine.tick(),'reserved');assert.equal(r.db.peek().data.scheduledEntry.status,'reserved');assert.equal(r.calls.length,0);
+ await Promise.all([r.engine.tick(),r.engine.tick()]);assert.equal(r.calls.length,1);assert.equal(r.calls[0].reason,'owner_authorized_one_time_entry');await r.engine.tick();
+ const s=r.db.peek().data;assert.equal(s.scheduledEntry.status,'completed');assert.equal(s.spentCents,'100');assert.equal(s.history.length,1);await r.engine.tick();assert.equal(r.calls.length,1);
+ const f=fresh();f.stocks[0].quote=53;assert.equal(decideOrder(s,f,next).side,'SELL');
+ assert.equal(decideOrder({...s,positions:{},cashCents:'1000',spentCents:'200'},fresh(),next),null);
+});
+test('scheduled entry respects pause, approved scope, holidays, expiry and funds',async()=>{
+ const r=rig();await r.engine.start(approval);const input={productId:'JEPI-USD',day:'2026-11-24',authorizationId:'owner-entry-test-20261123'};
+ for(const p of [{day:'2026-11-23'},{day:'2026-11-26'},{productId:'BTC-USD'},{productId:'O-USD'}])await assert.rejects(r.engine.scheduleEntry({...input,...p}));
+ await r.engine.pause();await assert.rejects(r.engine.scheduleEntry(input));await r.engine.start(approval);await r.engine.scheduleEntry(input);
+ const s=r.db.peek().data,f=feed();f.updatedAt='2026-11-25T16:00:00Z';f.stocks[0].quoteAt=f.updatedAt;f.stocks[0].pattern.qualifies=false;
+ assert.equal(decideOrder(s,f,Date.parse(f.updatedAt)),null);assert.equal(decideOrder({...s,mode:'paused'},f,Date.parse(f.updatedAt)),null);
+});

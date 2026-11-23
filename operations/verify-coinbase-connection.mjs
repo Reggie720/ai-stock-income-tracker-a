@@ -21,6 +21,13 @@ try{
  const workerHeaders={'X-Stock-Worker-Time':stamp,'X-Stock-Worker-Signature':signature};
  assert.equal((await fetch(base+'/api/trading/tick',{method:'POST',headers:workerHeaders,body:'{}'})).status,503);
  assert.equal((await fetch(base+'/api/trading/tick',{method:'POST',headers:workerHeaders,body:'{}'})).status,202);
+ const entry={productId:'O-USD',day:'2026-11-24',authorizationId:'owner-schedule-auth-test'};
+ for(const [offset,withProof,tamper,expectedStatus] of [[1,false,false,401],[2,true,true,401],[3,true,false,409]]){
+  const time=String(Number(stamp)+offset),headers={'Content-Type':'application/json','X-Stock-Worker-Time':time,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(time).digest('hex')};
+  if(withProof)headers['X-Stock-Owner-Signature']=createHmac('sha256',env.COINBASE_WORKER_TOKEN).update([time,'schedule-one-dollar',entry.productId,entry.day,entry.authorizationId].join('\n')).digest('hex');
+  const payload=tamper?{...entry,productId:'JEPI-USD'}:entry;
+  assert.equal((await fetch(base+'/api/trading/tick?schedule=one-dollar',{method:'POST',headers,body:JSON.stringify(payload)})).status,expectedStatus);
+ }
  const expired=String(Number(stamp)-1000);assert.equal((await fetch(base+'/api/trading/tick',{method:'POST',headers:{'X-Stock-Worker-Time':expired,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(expired).digest('hex')},body:'{}'})).status,401);
  const statusResponse=await fetch(base+'/api/savings',{headers:{Cookie}});assert.equal(statusResponse.status,200);assert.equal(statusResponse.headers.get('cache-control'),'no-store');const savings=await statusResponse.json();assert.equal(savings.policy.threshold,'200.00');assert.equal(savings.reserve,null);assert.equal(savings.liveAllocationEnabled,false);
  for(const [balance,amount] of [['200','0.00'],['300','150.00'],['200.01','100.00']]){const example=await fetch(base+'/api/savings/illustrate',{method:'POST',headers:{Cookie,'Content-Type':'application/json'},body:JSON.stringify({balance})});assert.equal(example.status,200);const j=await example.json();assert.equal(j.illustrationOnly,true);assert.equal(j.savings,amount);}
