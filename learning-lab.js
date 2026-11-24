@@ -93,7 +93,7 @@ export function botResults(history=[]){
 }
 export function labView(s,feed,now,legacy=null){
  validateLab(s);const observed=s.observations.filter(x=>x.status==='observed'),dates=new Set(observed.map(x=>x.day));
- return {enabled:true,lastTick:s.lastTick,status:s.status,prospectiveForecasts:s.lifetime.observed,completedForecasts:s.lifetime.scored,unavailableForecasts:s.lifetime.unavailable,trainingWindow:{examples:observed.length,sessions:dates.size,minimumExamples:40,minimumSessions:8},activeVersion:s.activeVersion,ranking:learnedRanking(s,feed,now),stockMemory:SYMBOLS.map(symbol=>({symbol,...s.stockMemory[symbol]})),recentForecasts:s.observations.slice(-20).reverse(),reviews:s.reviews.slice(-5).reverse(),reports:s.reports.slice(-3).reverse(),tradeResults:s.tradeResults,legacyLearning:legacy,limits:'Learning predicts later sampled prices, not profits. Research candidates are tested chronologically. Only validated ranking reorders approved signal-qualified stocks; it cannot raise budgets, broaden the watchlist, change entry/exit rules or alter the separately authorized one-time purchase.'};
+ return {enabled:true,lastTick:s.lastTick,status:s.status+(s.feedDiagnostics?' · Feed '+(s.feedDiagnostics.feedAgeSeconds===null?'unavailable':s.feedDiagnostics.feedAgeSeconds+'s old')+' · '+(s.feedDiagnostics.sessionOpen?'Research session open':'Research session closed')+' · '+s.feedDiagnostics.stocks.filter(x=>x.featuresReady).length+' stocks with usable samples':''),feedDiagnostics:s.feedDiagnostics??null,prospectiveForecasts:s.lifetime.observed,completedForecasts:s.lifetime.scored,unavailableForecasts:s.lifetime.unavailable,trainingWindow:{examples:observed.length,sessions:dates.size,minimumExamples:40,minimumSessions:8},activeVersion:s.activeVersion,ranking:learnedRanking(s,feed,now),stockMemory:SYMBOLS.map(symbol=>({symbol,...s.stockMemory[symbol]})),recentForecasts:s.observations.slice(-20).reverse(),reviews:s.reviews.slice(-5).reverse(),reports:s.reports.slice(-3).reverse(),tradeResults:s.tradeResults,legacyLearning:legacy,limits:'Learning predicts later sampled prices, not profits. Research candidates are tested chronologically. Only validated ranking reorders approved signal-qualified stocks; it cannot raise budgets, broaden the watchlist, change entry/exit rules or alter the separately authorized one-time purchase.'};
 }
 export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,id=randomUUID}){
  return {
@@ -104,7 +104,10 @@ export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,
    const time=now(),row=await store.read();validateLab(row.data);if(row.data.lease?.until>time)return {status:'busy'};
    const token=id(),claimed={...row.data,lease:{token,until:time+110000}};if(!await store.cas(row.version,claimed))return {status:'busy'};
    let f=null;try{f=await feed();}catch{}
-   let next=advanceLab(claimed,f,time);
+   const observedTime=now();
+   let next=advanceLab(claimed,f,observedTime);
+   const feedAge=Date.parse(f?.updatedAt);
+   next.feedDiagnostics={checkedAt:new Date(observedTime).toISOString(),feedUpdatedAt:f?.updatedAt??null,feedAgeSeconds:Number.isFinite(feedAge)?Math.round((observedTime-feedAge)/1000):null,sessionOpen:session(observedTime).open,monitorEnabled:f?.monitor?.enabled===true,stocks:(f?.stocks||[]).map(stock=>({symbol:stock.symbol,quoteAt:stock.quoteAt??null,historySamples:Array.isArray(stock.history)?stock.history.length:0,featuresReady:!!features(stock,observedTime)}))};
    try{const t=await tradeStatus();next.tradeResults=botResults(t.history);}catch{next.tradeResults={unavailable:true};}
    const day=session(time).day,attempts=next.researchAttempts.filter(x=>x.day===day),last=attempts.at(-1);
    if(research&&(!last||attempts.length<3&&((refreshResearch&&time-Date.parse(last.at)>=MINUTE)||(!next.reports.some(r=>r.day===day&&r.aiStatus==='ready')&&time-Date.parse(last.at)>=60*MINUTE)))){
