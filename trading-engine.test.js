@@ -54,7 +54,7 @@ test('savings reservation uses only verified bot cash; repeated high-balance spl
 });
 function executionFixture(overrides={}){
  const commands=[],env={COINBASE_KEY_ID:'test-key',COINBASE_KEY_SECRET:'fictional-secret-not-a-real-credential'};
- const run=async args=>{commands.push(args);if(args[0]==='portfolios'&&args[1]==='list')return {portfolios:[{uuid:id}]};if(args[0]==='portfolios'&&args[1]==='get')return {portfolio:{uuid:id},equity_positions:overrides.positions??[]};if(args[0]==='api-key')return {portfolio_uuid:id,can_view:true,can_trade:overrides.trade??true};if(args[0]==='balance')return {portfolio_id:id,accounts:[{currency:'USD',active:true,ready:true,available_balance:{currency:'USD',value:'25'}}]};if(args[0]==='products')return {product_id:'JEPI-USD',product_type:'EQUITY',quote_currency_id:'USD',quote_min_size:'0.01',base_increment:'0.00001',base_min_size:'0.00001'};if(args[0]==='fees')return {fee_tier:{maker_fee_rate:'0',taker_fee_rate:overrides.fee??'0'}};if(args[0]==='orders')return {order_id:'accepted-1'};throw Error('Unexpected command');};
+ const run=async args=>{commands.push(args);if(args[0]==='portfolios'&&args[1]==='list')return {portfolios:[{uuid:id}]};if(args[0]==='portfolios'&&args[1]==='get')return {portfolio:{uuid:id},equity_positions:overrides.positions??[]};if(args[0]==='api-key')return {portfolio_uuid:id,can_view:true,can_trade:overrides.trade??true};if(args[0]==='balance')return {portfolio_id:id,accounts:[{currency:'USD',active:true,ready:true,available_balance:{currency:'USD',value:'25'}}]};if(args[0]==='products')return {product_id:overrides.productId??'JEPI-USD',product_type:'EQUITY',quote_currency_id:'USD',quote_min_size:'0.01',base_increment:'0.00001',base_min_size:'0.00001'};if(args[0]==='fees')return {fee_tier:{maker_fee_rate:'0',taker_fee_rate:overrides.fee??'0'}};if(args[0]==='orders')return {order_id:'accepted-1'};throw Error('Unexpected command');};
  return {commands,broker:createExecutionBroker({env,run,now:()=>overrides.time??now,verifyFeeSchedule:async()=>overrides.feeProof??true})};
 }
 const order={productId:'JEPI-USD',side:'BUY',quoteCents:'100',protectedReserveCents:'0',signalQuoteAt:new Date(now).toISOString(),clientOrderId:client,portfolioId:id,approval:{...approval}};
@@ -186,4 +186,56 @@ test('learned ranking only reorders approved qualified stocks and never override
  assert.equal(decideOrder(s,f,now).productId,'O-USD');f.stocks[1].pattern={qualifies:false};assert.equal(decideOrder(s,f,now).productId,'JEPI-USD');
  assert.equal(decideOrder({...s,spentCents:'200'},f,now),null);
  s.scheduledEntry={id:'owner-test-entry',productId:'O-USD',quoteCents:'100',status:'queued',day:'2026-11-23'};f.learnedRanking=[{symbol:'JEPI',probability:1,version:2},{symbol:'O',probability:.1,version:2}];assert.equal(decideOrder(s,f,now).productId,'O-USD');
+});
+
+
+async function exhaustedRig(){
+ const r=rig();await r.engine.start(approval);const row=await r.db.read(),s=row.data;
+ s.spentCents='200';s.cashCents='0';s.positions={'JEPI-USD':{quantity:'0.04',costCents:'200'}};s.history=[{orderId:'prior-buy',side:'BUY',productId:'JEPI-USD',costOrProceedsCents:'200',quantity:'0.04',fees:'0'}];
+ await r.db.cas(row.version,s);
+ r.broker.audit=async()=>({readOnly:true,ordersSubmitted:0,checks:['account','usd','public_fees','account_fees','positions','WMT-USD','KR-USD','ACI-USD','QSR-USD'].map(name=>({name,passed:true}))});
+ return r;
+}
+const increase={additionalCents:'200',totalCapCents:'400',authorizationId:'owner-extra-two-20261125'};
+test('additional $2 is applied once without resetting spent money, positions or order history',async()=>{
+ const r=await exhaustedRig(),before=r.db.peek().data;const out=await r.engine.increaseBuyingCap(increase);const after=r.db.peek().data;
+ assert.equal(out.ordersSubmitted,0);assert.equal(r.calls.length,0);assert.equal(after.spentCents,'200');assert.equal(after.cashCents,'200');assert.deepEqual(after.positions,before.positions);assert.deepEqual(after.history,before.history);
+ const {activePlan}=await import('./trading-engine.js');assert.equal(activePlan(after).budget,'4');
+ assert.equal((await r.engine.increaseBuyingCap(increase)).status,'already_applied');assert.equal(r.db.peek().data.cashCents,'200');
+ await assert.rejects(r.engine.increaseBuyingCap({...increase,authorizationId:'another-increase'}));
+});
+test('increase rejects insufficient funds, partial audits, failed checks and ambiguous orders',async()=>{
+ for(const patch of ['funds','audit','partial','pending']){
+  const r=await exhaustedRig();if(patch==='funds')r.broker.account=async()=>({portfolioId:id,canTrade:true,spendableUsd:'1.99'});
+  if(patch==='audit')r.broker.audit=async()=>({readOnly:true,ordersSubmitted:0,checks:[{name:'account',passed:false}]});
+  if(patch==='partial')r.broker.audit=async()=>({readOnly:true,ordersSubmitted:0,checks:[{name:'account',passed:true}]});
+  if(patch==='pending'){const row=await r.db.read();row.data.pending={phase:'unknown',side:'BUY',productId:'JEPI-USD'};await r.db.cas(row.version,row.data);}
+  await assert.rejects(r.engine.increaseBuyingCap(increase));assert.equal(r.db.peek().data.cashCents,'0');assert.equal(r.calls.length,0);
+ }
+});
+test('racing owner pause and changed funds cannot be overwritten by a budget increase',async()=>{
+ const r=await exhaustedRig(),audit=r.broker.audit;r.broker.audit=async()=>{await r.engine.pause();return audit();};await assert.rejects(r.engine.increaseBuyingCap(increase));assert.equal(r.db.peek().data.mode,'paused');assert.equal(r.db.peek().data.cashCents,'0');
+ const f=await exhaustedRig();let n=0;f.broker.account=async()=>({portfolioId:id,canTrade:true,spendableUsd:++n===1?'2.00':'1.00'});await assert.rejects(f.engine.increaseBuyingCap(increase));assert.equal(f.db.peek().data.cashCents,'0');
+});
+test('amended plan permits only approved corporate signals up to the $4 cumulative cap and preserves exits',async()=>{
+ const r=await exhaustedRig();await r.engine.increaseBuyingCap(increase);const s=r.db.peek().data,f=feed();f.stocks.push({...f.stocks[0],symbol:'WMT'});
+ assert.equal(decideOrder(s,f,now).productId,'WMT-USD');
+ const exhausted=structuredClone(s);exhausted.spentCents='400';assert.equal(decideOrder(exhausted,f,now),null);
+ f.stocks[0].quote=53;assert.equal(decideOrder(exhausted,f,now).side,'SELL');assert.equal(decideOrder(exhausted,f,now).productId,'JEPI-USD');
+ const stale=feed();stale.stocks.push({...stale.stocks[0],symbol:'WMT',quoteAt:'2020-01-01'});assert.equal(decideOrder(s,stale,now),null);
+ const wrong=structuredClone(s);wrong.budgetIncrease.totalCapCents='600';assert.throws(()=>decideOrder(wrong,f,now));
+});
+test('corporate fill reaches four dollars exactly and pause/resume cannot replenish the allowance',async()=>{
+ const r=await exhaustedRig();await r.engine.increaseBuyingCap(increase);let s=r.db.peek().data;
+ s.spentCents='300';s.cashCents='100';s.pending={side:'BUY',productId:'WMT-USD',quoteCents:'100',phase:'submitted',orderId:'corporate-buy',clientOrderId:client};
+ const order={side:'BUY',product_id:'WMT-USD',order_id:'corporate-buy',status:'FILLED',filled_size:'0.02',average_filled_price:'50',total_fees:'0'};
+ const done=reconcileOrder(s,order,now);assert.equal(done.spentCents,'400');assert.equal(done.cashCents,'0');assert.equal(done.positions['WMT-USD'].quantity,'0.02');
+ const row=await r.db.read();await r.db.cas(row.version,done);await r.engine.pause();await r.engine.start({...approval,products:['JEPI-USD','WMT-USD']});assert.equal(r.db.peek().data.spentCents,'400');assert.equal(r.db.peek().data.cashCents,'0');
+});
+
+test('production adapter requires exact corporate amendment before a $1 company order',async()=>{
+ const increase={version:'additional-two-v1',id:'owner-extra-two-test',additionalCents:'200',totalCapCents:'400',portfolioBinding:approval.portfolioBinding,products:['WMT-USD','KR-USD','ACI-USD','QSR-USD']};
+ const company={...order,productId:'WMT-USD',approval:{...approval,products:['WMT-USD']}};
+ for(const grant of [undefined,{...increase,totalCapCents:'600'},{...increase,products:['WMT-USD']}]){const r=executionFixture({productId:'WMT-USD'});await assert.rejects(r.broker.submit({...company,approval:{...company.approval,budgetIncrease:grant}}),e=>e.noOrderSent===true);assert.equal(r.commands.length,0);}
+ const r=executionFixture({productId:'WMT-USD'});await r.broker.submit({...company,approval:{...company.approval,budgetIncrease:increase}});assert.equal(r.commands.filter(a=>a[0]==='orders').length,1);assert.ok(r.commands.at(-1).includes('quote_size=1.00'));
 });

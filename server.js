@@ -2,7 +2,7 @@ import http from 'node:http';
 import {createCoinbaseReader} from './coinbase-reader.js';
 import {savingsStatus, savingsIllustration} from './savings-rule.js';
 import {createTradingReadiness} from './trading-readiness.js';
-import {TradingEngine, PLAN, units} from './trading-engine.js';
+import {TradingEngine, PLAN, units, activePlan} from './trading-engine.js';
 import {createEngineStore} from './engine-store.js';
 import {createExecutionBroker,createFeeScheduleVerifier} from './coinbase-execution.js';
 import {createLearningLab} from './learning-lab.js';
@@ -721,6 +721,14 @@ const server=http.createServer(async(req,res)=>{
    if(url.pathname==='/api/learning/tick'){if(learningBusy)return send(res,202,{status:'busy'});learningBusy=true;try{return send(res,200,await learning().tick({refreshResearch:url.searchParams.get('refresh')==='research'}));}catch{return send(res,503,{error:'Learning memory or source unavailable; financial state unchanged'});}finally{learningBusy=false;}}
    if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
    if(url.searchParams.get('check')==='execution'){const row=await engine().status();if(!row.data.portfolioId||!row.data.approval)return send(res,409,{error:'No approved plan'});return send(res,200,{executionAudit:await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).audit(row.data.portfolioId,row.data.approval.products)});}
+   if(url.searchParams.get('increase')==='two-dollars'){
+    const input=await body(req,1024),proof=String(req.headers['x-stock-owner-signature']||'');
+    if(input?.additionalCents!=='200'||input?.totalCapCents!=='400'||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId||'')||!/^[a-f0-9]{64}$/.test(proof))return send(res,401,{error:'Exact bound buying-cap authorization required'});
+    const signed=crypto.createHmac('sha256',secret).update([stamp,'increase-buying-cap','200','400',input.authorizationId,'WMT-USD,KR-USD,ACI-USD,QSR-USD'].join('\n')).digest('hex');
+    if(!crypto.timingSafeEqual(Buffer.from(signed,'hex'),Buffer.from(proof,'hex')))return send(res,401,{error:'Exact bound buying-cap authorization required'});
+    if(workerBusy)return send(res,202,{status:'busy'});workerBusy=true;
+    try{return send(res,200,await engine().increaseBuyingCap(input));}catch{return send(res,409,{error:'Increase not applied: verify additional ready USD, corporate stock eligibility, fees and unchanged ledger'});}finally{workerBusy=false;}
+   }
    if(url.searchParams.get('schedule')==='one-dollar'){
     const input=await body(req,1024),proof=String(req.headers['x-stock-owner-signature']||'');
     if(!input||!/^([A-Z]+)-USD$/.test(input.productId||'')||!/^\d{4}-\d{2}-\d{2}$/.test(input.day||'')||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId||'')||!/^[a-f0-9]{64}$/.test(proof))return send(res,401,{error:'Bound owner authorization required'});
@@ -807,7 +815,7 @@ const server=http.createServer(async(req,res)=>{
     catch{return send(res,409,{error:'Settlement confirmation failed. Verify the exact sale proceeds in Coinbase and refresh the ledger.'});}
    }
    if(url.pathname==='/api/trading/engine'&&req.method==='GET'){
-    try{const row=await engine().status();const {portfolioId,...safe}=row.data;return send(res,200,{installed:true,ledgerReady:true,schedulerConfigured:!!process.env.COINBASE_WORKER_TOKEN,funded:!!portfolioId,plan:PLAN,state:safe});}
+    try{const row=await engine().status();const {portfolioId,...safe}=row.data;return send(res,200,{installed:true,ledgerReady:true,schedulerConfigured:!!process.env.COINBASE_WORKER_TOKEN,funded:!!portfolioId,plan:activePlan(row.data),state:safe});}
     catch{return send(res,503,{error:'The durable trading ledger is unavailable. Trading cannot start.',installed:true,ledgerReady:false,plan:PLAN});}
    }
 
@@ -909,4 +917,5 @@ const server=http.createServer(async(req,res)=>{
 server.listen(PORT,HOST,()=>{
  console.log(`AI Stock Income running at http://${HOST}:${PORT}`);
 });
+
 

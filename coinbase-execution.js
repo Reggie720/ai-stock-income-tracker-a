@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {coinbaseConfig,executeCoinbaseCommand} from './coinbase-reader.js';
-import {PLAN,PLAN_VERSION,units,session} from './trading-engine.js';
+import {PLAN,PLAN_VERSION,units,session,TRADABLE_PRODUCTS,validBudgetIncrease} from './trading-engine.js';
 const uuid=s=>typeof s==='string'&&/^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(s);
 export class NoOrderSent extends Error{constructor(message){super(message);this.noOrderSent=true;}}
 export function createFeeScheduleVerifier({request=fetch,now=Date.now}={}){
@@ -79,7 +79,8 @@ export function createExecutionBroker({env=process.env,run=executeCoinbaseComman
  async function submit(order){
   // All validation here occurs before the sole financial request below.
   try{
-   if(!uuid(order.clientOrderId)||!uuid(order.portfolioId)||!PLAN.products.includes(order.productId)||!['BUY','SELL'].includes(order.side)||order.approval?.version!==PLAN_VERSION||!order.approval.products?.includes(order.productId)||order.approval.equityAccountConfirmed!==true||order.approval.settledFundsConfirmed!==true||order.approval.marketOrderAccepted!==true)throw new NoOrderSent('Approved plan or order identity missing');
+   if(!uuid(order.clientOrderId)||!uuid(order.portfolioId)||!TRADABLE_PRODUCTS.includes(order.productId)||!['BUY','SELL'].includes(order.side)||order.approval?.version!==PLAN_VERSION||!order.approval.products?.includes(order.productId)||order.approval.equityAccountConfirmed!==true||order.approval.settledFundsConfirmed!==true||order.approval.marketOrderAccepted!==true)throw new NoOrderSent('Approved plan or order identity missing');
+   if(!PLAN.products.includes(order.productId)&&(!validBudgetIncrease(order.approval.budgetIncrease,order.approval.portfolioBinding)||!order.approval.budgetIncrease.products.includes(order.productId)))throw new NoOrderSent('Corporate purchase authorization missing');
    const time=session(now());if(!time.open)throw new NoOrderSent('Verified regular trading window is closed');
    if(await verifyFeeSchedule()!==true)throw new NoOrderSent('Current zero stock-trade fees could not be verified from Coinbase disclosures');
    const a=await account();if(!a.canTrade||a.portfolioId!==order.portfolioId)throw new NoOrderSent('Trade permission or portfolio changed');
@@ -125,7 +126,7 @@ export function createExecutionBroker({env=process.env,run=executeCoinbaseComman
    const summary={portfolioMatches:p.portfolio?.uuid===portfolioId,hasEquityList:Array.isArray(p.equity_positions),equityListCount:Array.isArray(p.equity_positions)?p.equity_positions.length:null,equityAssetTypes:Array.isArray(p.equity_positions)?p.equity_positions.map(x=>typeof x?.asset):[],equityTotal:p.portfolio_balances?.total_equities_balance??null};
    try{verifiedEquityPositions(p,portfolioId);add('positions',true,summary);}catch{add('positions',false,summary);}
    for(const product of products){
-    if(!PLAN.products.includes(product))throw Error('Unapproved audit product');
+    if(!TRADABLE_PRODUCTS.includes(product))throw Error('Unapproved audit product');
     const p=await run(['products','get',product],c);
     const ok=p.product_id===product&&p.product_type==='EQUITY'&&p.quote_currency_id==='USD'&&p.trading_disabled!==true&&p.cancel_only!==true&&(!p.status||String(p.status).toLowerCase()==='online')&&units(p.base_increment)>0n&&units(p.base_increment)<units('1')&&units(p.quote_min_size)<=units('1');
     add(product,ok,{type:p.product_type??null,status:p.status??null,quoteCurrency:p.quote_currency_id??null,quoteMinimum:p.quote_min_size??null,baseIncrement:p.base_increment??null});

@@ -30,6 +30,12 @@ try{
   const payload=tamper?{...entry,productId:'JEPI-USD'}:entry;
   assert.equal((await fetch(base+'/api/trading/tick?schedule=one-dollar',{method:'POST',headers,body:JSON.stringify(payload)})).status,expectedStatus);
  }
+ const increase={additionalCents:'200',totalCapCents:'400',authorizationId:'owner-extra-two-test'};
+ for(const [offset,withProof,tamper,expectedStatus] of [[-1,false,false,401],[-2,true,true,401],[-3,true,false,409]]){
+  const time=String(Number(stamp)+offset),headers={'Content-Type':'application/json','X-Stock-Worker-Time':time,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(time).digest('hex')};
+  if(withProof)headers['X-Stock-Owner-Signature']=createHmac('sha256',env.COINBASE_WORKER_TOKEN).update([time,'increase-buying-cap','200','400',increase.authorizationId,'WMT-USD,KR-USD,ACI-USD,QSR-USD'].join('\n')).digest('hex');
+  assert.equal((await fetch(base+'/api/trading/tick?increase=two-dollars',{method:'POST',headers,body:JSON.stringify(tamper?{...increase,totalCapCents:'600'}:increase)})).status,expectedStatus);
+ }
  const learningHeaders={'X-Stock-Worker-Time':stamp,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(stamp+'\nlearning-lab-v1').digest('hex')};
  assert.equal((await fetch(base+'/api/learning/tick',{method:'POST',headers:learningHeaders,body:'{}'})).status,503);
  const expired=String(Number(stamp)-1000);assert.equal((await fetch(base+'/api/trading/tick',{method:'POST',headers:{'X-Stock-Worker-Time':expired,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(expired).digest('hex')},body:'{}'})).status,401);
