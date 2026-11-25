@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
+import {RESEARCH_SYMBOLS,RESEARCH_BATCHES} from './company-research.js';
 import {SYMBOLS,emptyLab,advanceLab,features,reviewModel,learnedRanking,createLearningLab,botResults} from './learning-lab.js';
 import {createResearchCollector,validateResearchNote,safeSourceUrl} from './learning-research.js';
 import {createLearningStore} from './learning-store.js';
@@ -50,11 +51,11 @@ test('realized trade results use actual fill amounts and exclude paper/forecast 
 });
 test('AI interpretation rejects invented source IDs and unsafe source URLs',()=>{
  assert.equal(safeSourceUrl('javascript:alert(1)'),null);assert.equal(safeSourceUrl('https://user:pass@example.com'),null);
- const note={summary:'Evidence is limited.',stocks:SYMBOLS.map(symbol=>({symbol,assessment:'Needs more observations.',evidenceIds:['memory'],risks:['Loss'],unknowns:['Future price']}))};assert.ok(validateResearchNote(note,[{id:'memory'}]));assert.throws(()=>validateResearchNote(note,[]));assert.throws(()=>validateResearchNote({...note,summary:'https://invented.invalid'},[{id:'O-quote'}]));
+ const note={summary:'Evidence is limited.',stocks:SYMBOLS.map(symbol=>({symbol,assessment:'Needs more observations.',evidenceIds:['memory'],risks:['Loss'],unknowns:['Future price']}))};assert.ok(validateResearchNote(note,[{id:'memory'}],SYMBOLS));assert.throws(()=>validateResearchNote(note,[]));assert.throws(()=>validateResearchNote({...note,summary:'https://invented.invalid'},[{id:'O-quote'}]));
 });
 test('research separates stale quotes, unavailable profiles, news facts and AI interpretation',async()=>{
  const calls=[];const collector=createResearchCollector({env:{FINNHUB_API_KEY:'fictional-key'},request:async(url,opts)=>{calls.push({url,opts});return {ok:true,json:async()=>url.includes('company-news')?[]:{}};}});
- const report=await collector({feed:feed(),memory:{},day:'2026-11-24',now:time+600000});assert.equal(report.aiStatus,'unavailable');assert.equal(report.evidence.find(x=>x.id==='O-quote').stale,true);assert.ok(report.sourceStatus.every(s=>s.profileStatus==='unavailable'));assert.equal(calls.length,SYMBOLS.length*2);assert.ok(calls.every(x=>x.url.startsWith('https://finnhub.io/api/v1/')));
+ const report=await collector({feed:feed(),memory:{},day:'2026-11-24',now:time+600000});assert.equal(report.aiStatus,'unavailable');assert.equal(report.evidence.find(x=>x.id==='O-quote').stale,true);assert.ok(report.sourceStatus.every(s=>s.profileStatus==='unavailable'));assert.equal(calls.length,RESEARCH_SYMBOLS.length*2);assert.ok(calls.every(x=>x.url.startsWith('https://finnhub.io/api/v1/')));
 });
 test('signed learning memory rejects tampering and version replay',async()=>{
  let row={version:0,data:emptyLab()};const request=async(url,o)=>{if(url.includes('/rpc/')){const b=JSON.parse(o.body);if(b.expected!==row.version)return {ok:true,json:async()=>false};row={version:row.version+1,data:b.next_data};return {ok:true,json:async()=>true};}return {ok:true,json:async()=>[structuredClone(row)]};};
@@ -90,4 +91,9 @@ test('company news matches verified brand names and rejects unrelated issuers',a
  assert.equal(relevantHeadline('KR',"Fry's stores and Kroger announce update"),true);
  assert.equal(relevantHeadline('QSR','Burger King revenue increases'),true);
  assert.equal(relevantHeadline('WMT','Other retailers report earnings'),false);
+});
+test('daily research rotates bounded batches, preserves earlier reports and never changes the short-horizon model scope',async()=>{
+ let at=time;const db=store(),seen=[];const lab=createLearningLab({store:db,feed:async()=>feed(at),now:()=>at,tradeStatus:async()=>({history:[]}),research:async({symbols,day})=>{seen.push(symbols);return {day,aiStatus:'ready',interpretation:{stocks:symbols.map(symbol=>({symbol}))}};}});
+ for(let i=0;i<RESEARCH_BATCHES.length;i++){await lab.tick();at+=5*60000;}
+ assert.deepEqual(seen.flat(),RESEARCH_SYMBOLS);assert.equal(db.peek().data.reports.length,RESEARCH_BATCHES.length);await lab.tick();assert.equal(seen.length,RESEARCH_BATCHES.length);assert.equal(SYMBOLS.includes('NVDA'),false);assert.ok((await lab.read()).researchSymbols.includes('NVDA'));
 });

@@ -1,4 +1,6 @@
 import http from 'node:http';
+import {monthlyPlan,monthlyResearch} from './monthly-research.js';
+import {RESEARCH_SYMBOLS} from './company-research.js';
 import {createCoinbaseReader} from './coinbase-reader.js';
 import {savingsStatus, savingsIllustration} from './savings-rule.js';
 import {createTradingReadiness} from './trading-readiness.js';
@@ -240,6 +242,7 @@ function statePatch(b){
  const patch={};
  const own=key=>Object.hasOwn(b,key);
 
+ if(own('monthlyPlan')){try{patch.monthlyPlan=monthlyPlan(b.monthlyPlan);}catch{throw invalid('Invalid monthly research draft; no recurring trades are supported');}}
  if(own('budget')){
   if(!Number.isFinite(b.budget)||b.budget<0||b.budget>100000000){
    throw invalid('Invalid budget');
@@ -719,6 +722,9 @@ const server=http.createServer(async(req,res)=>{
    if(workerSignatures.has(given))return send(res,202,{status:'duplicate_worker_request'});
    workerSignatures.set(given,seconds);
    if(url.pathname==='/api/learning/tick'){if(learningBusy)return send(res,202,{status:'busy'});learningBusy=true;try{return send(res,200,await learning().tick({refreshResearch:url.searchParams.get('refresh')==='research'}));}catch{return send(res,503,{error:'Learning memory or source unavailable; financial state unchanged'});}finally{learningBusy=false;}}
+   if(url.searchParams.get('check')==='research-coverage'){
+    const f=await monitorFeed(),saved=await load(),config=storageConfig();const rows=await databaseRequest({...config,url:config.url.replace(/stock_tracker_state$/,'stock_tracker_company_daily_quotes')},'?select=symbol,session_date,quote_at,price&session_date=gte.'+new Date(Date.now()-65*86400000).toISOString().slice(0,10)+'&limit=2500');const view=monthlyResearch(rows);const lab=await learning().read();return send(res,200,{readOnly:true,ordersSubmitted:0,revision:process.env.RENDER_GIT_COMMIT||null,researchSymbols:RESEARCH_SYMBOLS,monitoredSymbols:f.stocks?.map(x=>x.symbol),dailyObservationRows:rows.length,monthlyComparisons:view.filter(x=>x.monthlyPriceReturnPercent!==null).length,plan:monthlyPlan(saved.monthlyPlan),recentResearch:lab.reports.map(r=>({day:r.day,symbols:r.symbols||r.interpretation?.stocks?.map(x=>x.symbol),status:r.aiStatus,profiles:r.sourceStatus?.filter(x=>x.profileStatus==='available').length})),automaticMonthlyPurchases:false});
+   }
    if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
    if(url.searchParams.get('check')==='execution'){const row=await engine().status();if(!row.data.portfolioId||!row.data.approval)return send(res,409,{error:'No approved plan'});return send(res,200,{executionAudit:await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).audit(row.data.portfolioId,row.data.approval.products)});}
    if(url.searchParams.get('check')==='pending-order'){
@@ -789,6 +795,9 @@ const server=http.createServer(async(req,res)=>{
     });
    }
 
+   if(url.pathname==='/api/research/monthly'&&req.method==='GET'){
+    try{const config=storageConfig();if(!config)throw Error('Persistent research unavailable');const rows=await databaseRequest({...config,url:config.url.replace(/stock_tracker_state$/,'stock_tracker_company_daily_quotes')},'?select=symbol,session_date,quote_at,price&session_date=gte.'+new Date(Date.now()-65*86400000).toISOString().slice(0,10)+'&order=quote_at.desc&limit=2500');const saved=await load();return send(res,200,{asOf:new Date().toISOString(),companies:monthlyResearch(rows),researchSymbols:RESEARCH_SYMBOLS,plan:monthlyPlan(saved.monthlyPlan),automaticMonthlyPurchases:false,limits:'Research and contribution illustrations only. Monthly purchases require a separate exact amount, allocation and brokerage setup. The existing live $4 stock plan and 5% exits are unchanged. Buying monthly does not mean receiving monthly profit.'});}catch{return send(res,503,{error:'Monthly research unavailable; no performance or purchase was fabricated'});}
+   }
    if(url.pathname==='/api/learning'&&req.method==='GET'){try{return send(res,200,await learning().read());}catch{return send(res,503,{error:'Learning status unavailable; no evidence fabricated'});}}
    if(url.pathname==='/api/learning/export'&&req.method==='GET'){try{return send(res,200,await learning().export());}catch{return send(res,503,{error:'Learning export unavailable'});}}
    if(url.pathname==='/api/coinbase/status'&&req.method==='GET'){

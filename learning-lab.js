@@ -1,7 +1,8 @@
 import {randomUUID} from 'node:crypto';
 import {PLAN,session,units} from './trading-engine.js';
-import {COMPANIES,COMPANY_SYMBOLS} from './company-research.js';
-export const SYMBOLS=[...new Set([...PLAN.products.map(x=>x.replace('-USD','')),...COMPANY_SYMBOLS])];
+import {COMPANIES,RESEARCH_SYMBOLS,RESEARCH_BATCHES} from './company-research.js';
+// Preserve the existing short-horizon model and its measured sample history.
+export const SYMBOLS=['SGOV','JEPI','DIVO','O','SUNB','WMT','ACI','KR','QSR'];
 const MINUTE=60000,DAY=86400000;
 const clone=x=>structuredClone(x);
 const finite=x=>typeof x==='number'&&Number.isFinite(x);
@@ -94,7 +95,7 @@ export function botResults(history=[]){
 }
 export function labView(s,feed,now,legacy=null){
  validateLab(s);const observed=s.observations.filter(x=>x.status==='observed'),dates=new Set(observed.map(x=>x.day));
- return {enabled:true,researchCompanies:COMPANIES,researchSymbols:SYMBOLS,lastTick:s.lastTick,status:s.status+(s.feedDiagnostics?' · Feed '+(s.feedDiagnostics.feedAgeSeconds===null?'unavailable':s.feedDiagnostics.feedAgeSeconds+'s old')+' · '+(s.feedDiagnostics.sessionOpen?'Research session open':'Research session closed')+' · '+s.feedDiagnostics.stocks.filter(x=>x.featuresReady).length+' stocks with usable samples':''),feedDiagnostics:s.feedDiagnostics??null,prospectiveForecasts:s.lifetime.observed,completedForecasts:s.lifetime.scored,unavailableForecasts:s.lifetime.unavailable,trainingWindow:{examples:observed.length,sessions:dates.size,minimumExamples:40,minimumSessions:8},activeVersion:s.activeVersion,ranking:learnedRanking(s,feed,now),stockMemory:SYMBOLS.map(symbol=>({symbol,...s.stockMemory[symbol]})),recentForecasts:s.observations.slice(-20).reverse(),reviews:s.reviews.slice(-5).reverse(),reports:s.reports.slice(-3).reverse(),tradeResults:s.tradeResults,legacyLearning:legacy,limits:'Learning predicts later sampled prices, not profits. Research candidates are tested chronologically. Only validated ranking reorders approved signal-qualified stocks; it cannot raise budgets, broaden the watchlist, change entry/exit rules or alter the separately authorized one-time purchase.'};
+ return {enabled:true,researchCompanies:COMPANIES,researchSymbols:RESEARCH_SYMBOLS,researchBatches:RESEARCH_BATCHES,lastTick:s.lastTick,status:s.status+(s.feedDiagnostics?' · Feed '+(s.feedDiagnostics.feedAgeSeconds===null?'unavailable':s.feedDiagnostics.feedAgeSeconds+'s old')+' · '+(s.feedDiagnostics.sessionOpen?'Research session open':'Research session closed')+' · '+s.feedDiagnostics.stocks.filter(x=>x.featuresReady).length+' stocks with usable samples':''),feedDiagnostics:s.feedDiagnostics??null,prospectiveForecasts:s.lifetime.observed,completedForecasts:s.lifetime.scored,unavailableForecasts:s.lifetime.unavailable,trainingWindow:{examples:observed.length,sessions:dates.size,minimumExamples:40,minimumSessions:8},activeVersion:s.activeVersion,ranking:learnedRanking(s,feed,now),stockMemory:SYMBOLS.map(symbol=>({symbol,...s.stockMemory[symbol]})),recentForecasts:s.observations.slice(-20).reverse(),reviews:s.reviews.slice(-5).reverse(),reports:s.reports.slice(-12).reverse(),tradeResults:s.tradeResults,legacyLearning:legacy,limits:'Learning predicts later sampled prices, not profits. Research candidates are tested chronologically. Only validated ranking reorders approved signal-qualified stocks; it cannot raise budgets, broaden the watchlist, change entry/exit rules or alter the separately authorized one-time purchase.'};
 }
 export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,id=randomUUID}){
  return {
@@ -110,10 +111,13 @@ export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,
    const feedAge=Date.parse(f?.updatedAt);
    next.feedDiagnostics={checkedAt:new Date(observedTime).toISOString(),feedUpdatedAt:f?.updatedAt??null,feedAgeSeconds:Number.isFinite(feedAge)?Math.round((observedTime-feedAge)/1000):null,sessionOpen:session(observedTime).open,monitorEnabled:f?.monitor?.enabled===true,stocks:(f?.stocks||[]).map(stock=>({symbol:stock.symbol,quoteAt:stock.quoteAt??null,historySamples:Array.isArray(stock.history)?stock.history.length:0,featuresReady:!!features(stock,observedTime)}))};
    try{const t=await tradeStatus();next.tradeResults=botResults(t.history);}catch{next.tradeResults={unavailable:true};}
-   const day=session(time).day,attempts=next.researchAttempts.filter(x=>x.day===day),last=attempts.at(-1);
-   if(research&&(!last||attempts.length<3&&((refreshResearch&&time-Date.parse(last.at)>=MINUTE)||(!next.reports.some(r=>r.day===day&&r.aiStatus==='ready')&&time-Date.parse(last.at)>=60*MINUTE)))){
-    next.researchAttempts.push({day,at:new Date(time).toISOString()});next.researchAttempts=next.researchAttempts.slice(-90);
-    try{const report=await research({feed:f,memory:labView(next,f,time,f?.learning||null),day,now:time});next.reports=next.reports.filter(r=>r.day!==day);next.reports.push(report);next.reports=next.reports.slice(-30);}catch{next.reports=next.reports.filter(r=>r.day!==day);next.reports.push({day,at:new Date(time).toISOString(),aiStatus:'unavailable',message:'Research provider unavailable; no facts or forecast fabricated.'});}
+   const day=session(time).day;
+   const covered=new Set(next.reports.filter(r=>r.day===day&&r.aiStatus==='ready').flatMap(r=>r.interpretation?.stocks?.map(x=>x.symbol)||r.symbols||[]));
+   const batch=RESEARCH_BATCHES.find(symbols=>{const key=symbols.join(',');const attempts=next.researchAttempts.filter(x=>x.day===day&&x.batchKey===key),last=attempts.at(-1);return symbols.some(x=>!covered.has(x))&&attempts.length<3&&(!last||time-Date.parse(last.at)>=(refreshResearch?MINUTE:60*MINUTE));});
+   const lastResearch=next.researchAttempts.at(-1);
+   if(research&&batch&&(!lastResearch||time-Date.parse(lastResearch.at)>=(refreshResearch?MINUTE:5*MINUTE))){
+    const batchKey=batch.join(',');next.researchAttempts.push({day,batchKey,at:new Date(time).toISOString()});next.researchAttempts=next.researchAttempts.slice(-540);
+    try{const report=await research({feed:f,memory:labView(next,f,time,f?.learning||null),day,now:time,symbols:batch});next.reports=next.reports.filter(r=>r.day!==day||r.batchKey!==batchKey);next.reports.push({...report,batchKey,symbols:batch});next.reports=next.reports.slice(-180);}catch{next.reports=next.reports.filter(r=>r.day!==day||r.batchKey!==batchKey);next.reports.push({day,batchKey,symbols:batch,at:new Date(time).toISOString(),aiStatus:'unavailable',message:'Research provider unavailable; no facts or forecast fabricated.'});}
    }
    next.lease=null;if(!await store.cas(row.version+1,next))return {status:'state_changed'};
    return {status:'learning_updated',forecasts:next.lifetime.observed,completed:next.lifetime.scored,activeVersion:next.activeVersion,reportStatus:next.reports.at(-1)?.aiStatus||'pending'};
