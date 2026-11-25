@@ -721,6 +721,11 @@ const server=http.createServer(async(req,res)=>{
    if(url.pathname==='/api/learning/tick'){if(learningBusy)return send(res,202,{status:'busy'});learningBusy=true;try{return send(res,200,await learning().tick({refreshResearch:url.searchParams.get('refresh')==='research'}));}catch{return send(res,503,{error:'Learning memory or source unavailable; financial state unchanged'});}finally{learningBusy=false;}}
    if(url.searchParams.get('check')==='fees')return send(res,200,{feeCheck:await verifyStockFees.inspect()});
    if(url.searchParams.get('check')==='execution'){const row=await engine().status();if(!row.data.portfolioId||!row.data.approval)return send(res,409,{error:'No approved plan'});return send(res,200,{executionAudit:await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).audit(row.data.portfolioId,row.data.approval.products)});}
+   if(url.searchParams.get('check')==='pending-order'){
+    const row=await engine().status(),p=row.data.pending;
+    if(!p?.orderId||!row.data.portfolioId)return send(res,200,{readOnly:true,pendingOrder:null,ordersSubmitted:0});
+    try{const raw=await createExecutionBroker({verifyFeeSchedule:verifyStockFees}).get(p.orderId,row.data.portfolioId),o=raw.order||raw;const fields=['order_id','client_order_id','product_id','side','status','filled_size','average_filled_price','total_fees','filled_value','total_value_after_fees','completion_percentage','number_of_fills','pending_cancel','reject_reason','reject_message'];const detail=Object.fromEntries(fields.filter(k=>Object.hasOwn(o,k)).map(k=>[k,o[k]]));return send(res,200,{readOnly:true,ordersSubmitted:0,expected:{orderId:p.orderId,productId:p.productId,side:p.side},responseFields:Object.keys(raw),order:detail});}catch(e){return send(res,503,{readOnly:true,ordersSubmitted:0,error:'Pending order read unavailable',category:['AUTH','PERMISSION','TIMEOUT','UNAVAILABLE'].includes(e.kind)?e.kind:'unverified_response'});}
+   }
    if(url.searchParams.get('increase')==='two-dollars'){
     const input=await body(req,1024),proof=String(req.headers['x-stock-owner-signature']||'');
     if(input?.additionalCents!=='200'||input?.totalCapCents!=='400'||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId||'')||!/^[a-f0-9]{64}$/.test(proof))return send(res,401,{error:'Exact bound buying-cap authorization required'});
