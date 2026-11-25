@@ -36,6 +36,12 @@ try{
   if(withProof)headers['X-Stock-Owner-Signature']=createHmac('sha256',env.COINBASE_WORKER_TOKEN).update([time,'increase-buying-cap','200','400',increase.authorizationId,'WMT-USD,KR-USD,ACI-USD,QSR-USD'].join('\n')).digest('hex');
   assert.equal((await fetch(base+'/api/trading/tick?increase=two-dollars',{method:'POST',headers,body:JSON.stringify(tamper?{...increase,totalCapCents:'600'}:increase)})).status,expectedStatus);
  }
+ const repairOrder='33333333-3333-4333-8333-333333333333';
+ for(const [offset,withProof,tamper,expectedStatus] of [[-4,false,false,401],[-5,true,true,401],[-6,true,false,409]]){
+  const time=String(Number(stamp)+offset),headers={'Content-Type':'application/json','X-Stock-Worker-Time':time,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(time).digest('hex')};
+  if(withProof)headers['X-Stock-Owner-Signature']=createHmac('sha256',env.COINBASE_WORKER_TOKEN).update([time,'repair-reconciliation',repairOrder].join('\n')).digest('hex');
+  assert.equal((await fetch(base+'/api/trading/tick?repair=reconciliation',{method:'POST',headers,body:JSON.stringify({orderId:tamper?'44444444-4444-4444-8444-444444444444':repairOrder})})).status,expectedStatus);
+ }
  const learningHeaders={'X-Stock-Worker-Time':stamp,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(stamp+'\nlearning-lab-v1').digest('hex')};
  assert.equal((await fetch(base+'/api/learning/tick',{method:'POST',headers:learningHeaders,body:'{}'})).status,503);
  const expired=String(Number(stamp)-1000);assert.equal((await fetch(base+'/api/trading/tick',{method:'POST',headers:{'X-Stock-Worker-Time':expired,'X-Stock-Worker-Signature':createHmac('sha256',env.COINBASE_WORKER_TOKEN).update(expired).digest('hex')},body:'{}'})).status,401);

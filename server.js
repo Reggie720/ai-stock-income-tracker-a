@@ -734,6 +734,14 @@ const server=http.createServer(async(req,res)=>{
     if(workerBusy)return send(res,202,{status:'busy'});workerBusy=true;
     try{return send(res,200,await engine().increaseBuyingCap(input));}catch{return send(res,409,{error:'Increase not applied: verify additional ready USD, corporate stock eligibility, fees and unchanged ledger'});}finally{workerBusy=false;}
    }
+   if(url.searchParams.get('repair')==='reconciliation'){
+    const input=await body(req,1024),proof=String(req.headers['x-stock-owner-signature']||'');
+    if(!/^[a-f0-9-]{36}$/.test(input?.orderId||'')||!/^[a-f0-9]{64}$/.test(proof))return send(res,401,{error:'Bound repair authorization required'});
+    const signed=crypto.createHmac('sha256',secret).update([stamp,'repair-reconciliation',input.orderId].join('\n')).digest('hex');
+    if(!crypto.timingSafeEqual(Buffer.from(signed,'hex'),Buffer.from(proof,'hex')))return send(res,401,{error:'Bound repair authorization required'});
+    if(workerBusy)return send(res,202,{status:'busy'});workerBusy=true;
+    try{return send(res,200,await engine().recoverReconciliation(input.orderId));}catch{return send(res,409,{error:'Reconciliation repair not applied; order, pause, funds and execution checks must match'});}finally{workerBusy=false;}
+   }
    if(url.searchParams.get('schedule')==='one-dollar'){
     const input=await body(req,1024),proof=String(req.headers['x-stock-owner-signature']||'');
     if(!input||!/^([A-Z]+)-USD$/.test(input.productId||'')||!/^\d{4}-\d{2}-\d{2}$/.test(input.day||'')||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId||'')||!/^[a-f0-9]{64}$/.test(proof))return send(res,401,{error:'Bound owner authorization required'});

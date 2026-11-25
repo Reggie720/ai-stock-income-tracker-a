@@ -137,6 +137,20 @@ export class TradingEngine{
   validateEngine(next);if(!await this.store.cas(row.version,next))throw Error('Ledger changed; increase was not applied');
   return {status:'buying_cap_increased',totalCapCents:'400',additionalCents:'200',cashCents:next.cashCents,spentCents:next.spentCents,products:[...CORPORATE_PRODUCTS],ordersSubmitted:0};
  }
+ async recoverReconciliation(orderId){
+  const row=await this.status(),s=row.data,last=s.history.at(-1);
+  const uncertain=s.reason==='Order reconciliation is uncertain. No new order will be sent.';
+  const reconciled=s.reason==='Order reconciled. Sale proceeds remain unavailable until settlement is verified.'&&!s.pending&&last?.orderId===orderId;
+  if(s.mode!=='paused'||(!uncertain&&!reconciled)||!s.portfolioId||s.approval?.version!==PLAN_VERSION||s.approval.equityAccountConfirmed!==true||s.approval.settledFundsConfirmed!==true||s.approval.marketOrderAccepted!==true||s.approval.portfolioBinding!==portfolioBinding(s.portfolioId)||s.pending&&s.pending.orderId!==orderId)throw Error('Only the existing reconciliation pause can be repaired');
+  const o=await this.broker.get(orderId,s.portfolioId);if(o.status!=='FILLED')throw Error('A verified filled order is required');let next;
+  if(s.pending){next=reconcileOrder(s,o,this.now());if(!next)throw Error('Order is not terminal');}
+  else{if(o.order_id!==orderId||o.product_id!==last.productId||o.side!==last.side||o.status!==last.status||decimal(units(o.filled_size))!==last.quantity||decimal(units(o.total_fees))!==last.fees)throw Error('Previously reconciled order changed');next=copy(s);}
+  const a=await this.broker.account();if(!a.canTrade||a.portfolioId!==s.portfolioId||units(a.spendableUsd)<(money(next.cashCents)+money(next.reserveCents))*(SCALE/100n))throw Error('Remaining bot cash is not covered');
+  const audit=await this.broker.audit(s.portfolioId,s.approval.products),required=['account','usd','public_fees','account_fees','positions',...s.approval.products];
+  if(audit.readOnly!==true||audit.ordersSubmitted!==0||audit.checks?.some(x=>x.passed!==true)||required.some(name=>!audit.checks?.some(x=>x.name===name&&x.passed===true)))throw Error('Fresh execution audit failed');
+  next.mode='active';next.reason='Existing filled order verified and recorded; approved plan resumed without a replacement order.';next.reconciliationRepairs=[...(s.reconciliationRepairs||[]),{orderId,at:new Date(this.now()).toISOString(),ordersSubmitted:0}];
+  validateEngine(next);if(!await this.store.cas(row.version,next))throw Error('Ledger changed during repair');return {status:'reconciliation_repaired',ordersSubmitted:0,spentCents:next.spentCents,cashCents:next.cashCents};
+ }
  async scheduleEntry(input){
   if(!input||!PLAN.products.includes(input.productId)||!/^\d{4}-\d{2}-\d{2}$/.test(input.day)||!/^[a-z0-9-]{8,80}$/.test(input.authorizationId))throw Error('Invalid scheduled purchase');
   const today=session(this.now()).day,target=Date.parse(input.day+'T16:00:00Z');

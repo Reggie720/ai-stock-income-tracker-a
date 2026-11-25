@@ -239,3 +239,21 @@ test('production adapter requires exact corporate amendment before a $1 company 
  for(const grant of [undefined,{...increase,totalCapCents:'600'},{...increase,products:['WMT-USD']}]){const r=executionFixture({productId:'WMT-USD'});await assert.rejects(r.broker.submit({...company,approval:{...company.approval,budgetIncrease:grant}}),e=>e.noOrderSent===true);assert.equal(r.commands.length,0);}
  const r=executionFixture({productId:'WMT-USD'});await r.broker.submit({...company,approval:{...company.approval,budgetIncrease:increase}});assert.equal(r.commands.filter(a=>a[0]==='orders').length,1);assert.ok(r.commands.at(-1).includes('quote_size=1.00'));
 });
+async function reconciliationRig(){
+ const r=await exhaustedRig();await r.engine.increaseBuyingCap(increase);let row=await r.db.read();
+ await r.db.cas(row.version,{...row.data,mode:'paused',reason:'Order reconciliation is uncertain. No new order will be sent.',pending:{productId:'QSR-USD',side:'BUY',phase:'submitted',orderId:'known-qsr-fill',clientOrderId:client,quoteCents:'100'}});
+ r.broker.get=async()=>({order_id:'known-qsr-fill',product_id:'QSR-USD',side:'BUY',status:'FILLED',filled_size:'0.01302',average_filled_price:'76.792',total_fees:'0'});
+ r.broker.audit=async()=>({readOnly:true,ordersSubmitted:0,checks:['account','usd','public_fees','account_fees','positions',...r.db.peek().data.approval.products].map(name=>({name,passed:true}))});return r;
+}
+test('repair records the existing QSR fill once and resumes with preserved cap and no order submission',async()=>{
+ const r=await reconciliationRig(),prior=r.db.peek().data.positions;const result=await r.engine.recoverReconciliation('known-qsr-fill');assert.equal(result.status,'reconciliation_repaired');assert.equal(result.ordersSubmitted,0);const s=r.db.peek().data;assert.equal(s.mode,'active');assert.equal(s.spentCents,'300');assert.equal(s.cashCents,'100');assert.deepEqual(s.positions['JEPI-USD'],prior['JEPI-USD']);assert.equal(s.positions['QSR-USD'].quantity,'0.01302');assert.equal(s.history.filter(x=>x.orderId==='known-qsr-fill').length,1);assert.equal(r.calls.length,0);await assert.rejects(r.engine.recoverReconciliation('known-qsr-fill'));assert.equal(r.db.peek().data.spentCents,'300');
+});
+test('repair can resume after the normal worker recorded the same fill while paused',async()=>{
+ const r=await reconciliationRig();let row=await r.db.read();const fill=await r.broker.get();await r.db.cas(row.version,reconcileOrder(row.data,fill,now));assert.equal(r.db.peek().data.mode,'paused');await r.engine.recoverReconciliation('known-qsr-fill');assert.equal(r.db.peek().data.history.filter(x=>x.orderId==='known-qsr-fill').length,1);assert.equal(r.db.peek().data.cashCents,'100');
+});
+test('reconciliation repair refuses owner pauses, wrong orders, unfinished orders, changed fills and racing pauses',async()=>{
+ let r=await reconciliationRig();await r.engine.pause();await assert.rejects(r.engine.recoverReconciliation('known-qsr-fill'));assert.equal(r.db.peek().data.mode,'paused');
+ r=await reconciliationRig();await assert.rejects(r.engine.recoverReconciliation('wrong-order'));
+ r=await reconciliationRig();r.broker.get=async()=>({order_id:'known-qsr-fill',product_id:'QSR-USD',side:'BUY',status:'OPEN'});await assert.rejects(r.engine.recoverReconciliation('known-qsr-fill'));
+ r=await reconciliationRig();r.broker.audit=async()=>{await r.engine.pause();return {readOnly:true,ordersSubmitted:0,checks:['account','usd','public_fees','account_fees','positions',...r.db.peek().data.approval.products].map(name=>({name,passed:true}))};};await assert.rejects(r.engine.recoverReconciliation('known-qsr-fill'));assert.equal(r.db.peek().data.reason,'Paused by owner. In-flight orders may still fill.');assert.equal(r.calls.length,0);
+});
