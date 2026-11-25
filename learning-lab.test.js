@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {emptyLab,advanceLab,features,reviewModel,learnedRanking,createLearningLab,botResults} from './learning-lab.js';
+import {SYMBOLS,emptyLab,advanceLab,features,reviewModel,learnedRanking,createLearningLab,botResults} from './learning-lab.js';
 import {createResearchCollector,validateResearchNote,safeSourceUrl} from './learning-research.js';
 import {createLearningStore} from './learning-store.js';
 const time=Date.parse('2026-11-24T16:00:00Z');
@@ -50,11 +50,11 @@ test('realized trade results use actual fill amounts and exclude paper/forecast 
 });
 test('AI interpretation rejects invented source IDs and unsafe source URLs',()=>{
  assert.equal(safeSourceUrl('javascript:alert(1)'),null);assert.equal(safeSourceUrl('https://user:pass@example.com'),null);
- const note={summary:'Evidence is limited.',stocks:['SGOV','JEPI','DIVO','O'].map(symbol=>({symbol,assessment:'Needs more observations.',evidenceIds:['memory'],risks:['Loss'],unknowns:['Future price']}))};assert.ok(validateResearchNote(note,[{id:'memory'}]));assert.throws(()=>validateResearchNote(note,[]));assert.throws(()=>validateResearchNote({...note,summary:'https://invented.invalid'},[{id:'O-quote'}]));
+ const note={summary:'Evidence is limited.',stocks:SYMBOLS.map(symbol=>({symbol,assessment:'Needs more observations.',evidenceIds:['memory'],risks:['Loss'],unknowns:['Future price']}))};assert.ok(validateResearchNote(note,[{id:'memory'}]));assert.throws(()=>validateResearchNote(note,[]));assert.throws(()=>validateResearchNote({...note,summary:'https://invented.invalid'},[{id:'O-quote'}]));
 });
 test('research separates stale quotes, unavailable profiles, news facts and AI interpretation',async()=>{
  const calls=[];const collector=createResearchCollector({env:{FINNHUB_API_KEY:'fictional-key'},request:async(url,opts)=>{calls.push({url,opts});return {ok:true,json:async()=>url.includes('company-news')?[]:{}};}});
- const report=await collector({feed:feed(),memory:{},day:'2026-11-24',now:time+600000});assert.equal(report.aiStatus,'unavailable');assert.equal(report.evidence.find(x=>x.id==='O-quote').stale,true);assert.ok(report.sourceStatus.every(s=>s.profileStatus==='unavailable'));assert.equal(calls.length,8);assert.ok(calls.every(x=>x.url.startsWith('https://finnhub.io/api/v1/')));
+ const report=await collector({feed:feed(),memory:{},day:'2026-11-24',now:time+600000});assert.equal(report.aiStatus,'unavailable');assert.equal(report.evidence.find(x=>x.id==='O-quote').stale,true);assert.ok(report.sourceStatus.every(s=>s.profileStatus==='unavailable'));assert.equal(calls.length,SYMBOLS.length*2);assert.ok(calls.every(x=>x.url.startsWith('https://finnhub.io/api/v1/')));
 });
 test('signed learning memory rejects tampering and version replay',async()=>{
  let row={version:0,data:emptyLab()};const request=async(url,o)=>{if(url.includes('/rpc/')){const b=JSON.parse(o.body);if(b.expected!==row.version)return {ok:true,json:async()=>false};row={version:row.version+1,data:b.next_data};return {ok:true,json:async()=>true};}return {ok:true,json:async()=>[structuredClone(row)]};};
@@ -68,4 +68,26 @@ test('research rejects headlines about unrelated funds and matches Realty Income
  assert.equal(relevantHeadline('JEPI','Forget JEPI: 4 Dividend Stocks'),true);
  assert.equal(relevantHeadline('O','Better Dividend Stock: Realty Income vs. Iron Mountain'),true);
  assert.equal(relevantHeadline('O','Stocks climb on outlook'),false);
+});
+
+
+
+test('corporate research supports requested companies without expanding live order scope',async()=>{
+ const {PLAN,decideOrder,emptyEngine,PLAN_VERSION}=await import('./trading-engine.js');
+ for(const symbol of ['SUNB','WMT','ACI','KR','QSR']){
+  const f=feed();f.stocks=[stock(symbol)];const memory=advanceLab(emptyLab(),f,time);
+  assert.equal(memory.observations[0].symbol,symbol);
+  assert.equal(PLAN.products.includes(symbol+'-USD'),false);
+  const engine=emptyEngine();engine.mode='active';engine.cashCents='200';engine.approval={version:PLAN_VERSION,products:[...PLAN.products]};
+  assert.equal(decideOrder(engine,{...f,learnedRanking:[{symbol,probability:.99,version:1}]},time),null);
+ }
+});
+test('company news matches verified brand names and rejects unrelated issuers',async()=>{
+ const {relevantHeadline}=await import('./learning-research.js');
+ assert.equal(relevantHeadline('SUNB','Sunbelt Rentals reports earnings'),true);
+ assert.equal(relevantHeadline('WMT','Walmart holiday sales update'),true);
+ assert.equal(relevantHeadline('ACI','Safeway supermarket outlook'),true);
+ assert.equal(relevantHeadline('KR',"Fry's stores and Kroger announce update"),true);
+ assert.equal(relevantHeadline('QSR','Burger King revenue increases'),true);
+ assert.equal(relevantHeadline('WMT','Other retailers report earnings'),false);
 });

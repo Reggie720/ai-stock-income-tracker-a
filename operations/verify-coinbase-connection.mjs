@@ -3,7 +3,7 @@ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'tracker-coinbase-auth-'));let 
 try{
  let code=await fs.readFile(new URL('../server.js',import.meta.url),'utf8');
  code=code.replace('console.log(`AI Stock Income running at http://${HOST}:${PORT}`)','console.log(`http://${HOST}:${server.address().port}`)');
- await fs.writeFile(path.join(dir,'server.js'),code);await fs.copyFile(new URL('../coinbase-reader.js',import.meta.url),path.join(dir,'coinbase-reader.js'));await fs.copyFile(new URL('../savings-rule.js',import.meta.url),path.join(dir,'savings-rule.js'));await fs.copyFile(new URL('../trading-readiness.js',import.meta.url),path.join(dir,'trading-readiness.js'));for(const name of ['trading-engine.js','coinbase-execution.js','engine-store.js','learning-lab.js','learning-store.js','learning-research.js'])await fs.copyFile(new URL('../'+name,import.meta.url),path.join(dir,name));await fs.copyFile(new URL('../dividends.js',import.meta.url),path.join(dir,'dividends.js'));await fs.writeFile(path.join(dir,'package.json'),'{"type":"module"}');
+ await fs.writeFile(path.join(dir,'server.js'),code);await fs.copyFile(new URL('../coinbase-reader.js',import.meta.url),path.join(dir,'coinbase-reader.js'));await fs.copyFile(new URL('../savings-rule.js',import.meta.url),path.join(dir,'savings-rule.js'));await fs.copyFile(new URL('../trading-readiness.js',import.meta.url),path.join(dir,'trading-readiness.js'));for(const name of ['trading-engine.js','coinbase-execution.js','engine-store.js','learning-lab.js','learning-store.js','learning-research.js','company-research.js'])await fs.copyFile(new URL('../'+name,import.meta.url),path.join(dir,name));await fs.copyFile(new URL('../dividends.js',import.meta.url),path.join(dir,'dividends.js'));await fs.writeFile(path.join(dir,'package.json'),'{"type":"module"}');
  const env={...process.env,HOST:'127.0.0.1',PORT:'0',RENDER:'true',TRACKER_PASSWORD:'fictional-password',TRACKER_SESSION_SECRET:'fictional-session-secret-long-enough-for-tests'};for(const k of Object.keys(env))if(k.startsWith('COINBASE_')||k.startsWith('SUPABASE_'))delete env[k];env.COINBASE_WORKER_TOKEN='9'.repeat(64);
  child=spawn(process.execPath,['server.js'],{cwd:dir,env,stdio:['ignore','pipe','pipe']});
  const base=await new Promise((resolve,reject)=>{child.stdout.once('data',x=>resolve(String(x).trim()));child.once('exit',()=>reject(Error('Server startup failed')));});
@@ -40,4 +40,5 @@ try{
  console.log('PASS authenticated savings status, illustrative arithmetic, input validation and unavailable financial writes');
  console.log('PASS real server authentication, no-store status, truthful missing-key result, and no arbitrary /api/coinbase write endpoints');
 }finally{if(child&&child.exitCode===null){child.kill();await once(child,'exit');}await fs.rm(dir,{recursive:true,force:true});}
+
 

@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {PLAN,session,units} from './trading-engine.js';
-export const SYMBOLS=PLAN.products.map(x=>x.replace('-USD',''));
+import {COMPANIES,COMPANY_SYMBOLS} from './company-research.js';
+export const SYMBOLS=[...new Set([...PLAN.products.map(x=>x.replace('-USD','')),...COMPANY_SYMBOLS])];
 const MINUTE=60000,DAY=86400000;
 const clone=x=>structuredClone(x);
 const finite=x=>typeof x==='number'&&Number.isFinite(x);
@@ -93,7 +94,7 @@ export function botResults(history=[]){
 }
 export function labView(s,feed,now,legacy=null){
  validateLab(s);const observed=s.observations.filter(x=>x.status==='observed'),dates=new Set(observed.map(x=>x.day));
- return {enabled:true,lastTick:s.lastTick,status:s.status+(s.feedDiagnostics?' · Feed '+(s.feedDiagnostics.feedAgeSeconds===null?'unavailable':s.feedDiagnostics.feedAgeSeconds+'s old')+' · '+(s.feedDiagnostics.sessionOpen?'Research session open':'Research session closed')+' · '+s.feedDiagnostics.stocks.filter(x=>x.featuresReady).length+' stocks with usable samples':''),feedDiagnostics:s.feedDiagnostics??null,prospectiveForecasts:s.lifetime.observed,completedForecasts:s.lifetime.scored,unavailableForecasts:s.lifetime.unavailable,trainingWindow:{examples:observed.length,sessions:dates.size,minimumExamples:40,minimumSessions:8},activeVersion:s.activeVersion,ranking:learnedRanking(s,feed,now),stockMemory:SYMBOLS.map(symbol=>({symbol,...s.stockMemory[symbol]})),recentForecasts:s.observations.slice(-20).reverse(),reviews:s.reviews.slice(-5).reverse(),reports:s.reports.slice(-3).reverse(),tradeResults:s.tradeResults,legacyLearning:legacy,limits:'Learning predicts later sampled prices, not profits. Research candidates are tested chronologically. Only validated ranking reorders approved signal-qualified stocks; it cannot raise budgets, broaden the watchlist, change entry/exit rules or alter the separately authorized one-time purchase.'};
+ return {enabled:true,researchCompanies:COMPANIES,researchSymbols:SYMBOLS,lastTick:s.lastTick,status:s.status+(s.feedDiagnostics?' · Feed '+(s.feedDiagnostics.feedAgeSeconds===null?'unavailable':s.feedDiagnostics.feedAgeSeconds+'s old')+' · '+(s.feedDiagnostics.sessionOpen?'Research session open':'Research session closed')+' · '+s.feedDiagnostics.stocks.filter(x=>x.featuresReady).length+' stocks with usable samples':''),feedDiagnostics:s.feedDiagnostics??null,prospectiveForecasts:s.lifetime.observed,completedForecasts:s.lifetime.scored,unavailableForecasts:s.lifetime.unavailable,trainingWindow:{examples:observed.length,sessions:dates.size,minimumExamples:40,minimumSessions:8},activeVersion:s.activeVersion,ranking:learnedRanking(s,feed,now),stockMemory:SYMBOLS.map(symbol=>({symbol,...s.stockMemory[symbol]})),recentForecasts:s.observations.slice(-20).reverse(),reviews:s.reviews.slice(-5).reverse(),reports:s.reports.slice(-3).reverse(),tradeResults:s.tradeResults,legacyLearning:legacy,limits:'Learning predicts later sampled prices, not profits. Research candidates are tested chronologically. Only validated ranking reorders approved signal-qualified stocks; it cannot raise budgets, broaden the watchlist, change entry/exit rules or alter the separately authorized one-time purchase.'};
 }
 export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,id=randomUUID}){
  return {
@@ -119,3 +120,4 @@ export function createLearningLab({store,feed,research,tradeStatus,now=Date.now,
   }
  };
 }
+
