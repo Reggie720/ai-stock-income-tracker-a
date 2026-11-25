@@ -1,6 +1,6 @@
 # Learning and sourced research
 
-The learning worker is independent of the financial worker. It runs every five minutes during weekdays 09:30–16:20 New York, records at most one prospective observation per symbol per fifteen-minute slot, and evaluates the next 60 minutes of sampled prices. Forecasts are created only with fresh feed/quotes, at least six distinct observations spanning 30 minutes, and no gap above ten minutes. Outcomes require a real quote at or after the due time within ten minutes, from the same session and not the future. Unavailable/session-ended outcomes are recorded separately, never counted as wins.
+The learning worker is independent of the financial worker. It runs every five minutes at minutes 2, 7, 12, and so on, after the monitor's quote refresh, during weekdays 09:30–16:20 New York, records at most one prospective observation per symbol per fifteen-minute slot, and evaluates the next 60 minutes of sampled prices. Forecasts are created only with fresh feed/quotes, at least six distinct observations spanning 30 minutes, and no gap above ten minutes. Outcomes require a real quote at or after the due time within ten minutes, from the same session and not the future. Unavailable/session-ended outcomes are recorded separately, never counted as wins.
 
 ## Learning model
 

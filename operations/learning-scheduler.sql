@@ -1,6 +1,7 @@
+-- Offset after the monitor's minute-1/6/11 quote refresh; keep all freshness limits.
 -- Independent of trading mode: research continues while live orders are paused.
 -- Domain-separated HMAC prevents collision with the existing trading worker.
-select cron.schedule('stock-tracker-learning-v1','*/5 * * * *',$job$
+select cron.schedule('stock-tracker-learning-v1','2-57/5 * * * *',$job$
  select net.http_post(
   url:='https://ai-stock-income-tracker-a.onrender.com/api/learning/tick',
   headers:=jsonb_build_object('Content-Type','application/json',
